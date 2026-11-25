@@ -5,7 +5,7 @@
 <p align="center">
   <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-D6F048?style=flat-square&labelColor=0E0F12">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-D6F048?style=flat-square&labelColor=0E0F12"></a>
-  <img alt="82 tests passing" src="https://img.shields.io/badge/tests-82%20passing-D6F048?style=flat-square&labelColor=0E0F12">
+  <a href="https://github.com/wkalidev/wkvideo/actions/workflows/tests.yml"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/wkalidev/wkvideo/tests.yml?branch=main&style=flat-square&labelColor=0E0F12&label=tests"></a>
   <img alt="Runs locally, no cloud API" src="https://img.shields.io/badge/runs-locally-D6F048?style=flat-square&labelColor=0E0F12">
 </p>
 
