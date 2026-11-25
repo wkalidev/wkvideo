@@ -1,7 +1,27 @@
-# wkvideo
+<p align="center">
+  <img src="docs/header.svg" width="100%" alt="wkvideo: images and a voiceover in, a captioned vertical video out">
+</p>
+
+<p align="center">
+  <img alt="Python 3.9+" src="https://img.shields.io/badge/python-3.9%2B-D6F048?style=flat-square&labelColor=0E0F12">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-D6F048?style=flat-square&labelColor=0E0F12"></a>
+  <img alt="82 tests passing" src="https://img.shields.io/badge/tests-82%20passing-D6F048?style=flat-square&labelColor=0E0F12">
+  <img alt="Runs locally, no cloud API" src="https://img.shields.io/badge/runs-locally-D6F048?style=flat-square&labelColor=0E0F12">
+</p>
+
+<p align="center">
+  <img src="docs/demo.webp" width="270" alt="The first 4 seconds of a wkvideo render: headline pop-in, slow zoom and word-by-word captions with the spoken word in lime">
+  <br>
+  <sub>The first 4 seconds of a real render. Photo: <a href="https://unsplash.com/photos/YzLMmxDTrvI">Windows on Unsplash</a></sub>
+</p>
+
+```bash
+pip install git+https://github.com/wkalidev/wkvideo.git
+```
 
 Turn a folder of images, an MP3 voiceover and a `scenes.json` into a vertical
-**1080×1920 MP4** for Shorts, Reels and TikTok.
+**1080×1920 MP4** for Shorts, Reels and TikTok, with word-by-word captions.
+Rendering and transcription run on your machine, with no cloud API.
 
 Each scene is rendered as:
 
@@ -148,6 +168,10 @@ pytest
 
 The end-to-end test renders a short video and checks it with `ffprobe`. It is
 skipped when ffmpeg isn't installed.
+
+The README images are generated: `python docs/brand.py` builds the logo and
+header from the bundled Inter (needs `fonttools` and `uharfbuzz`), and
+`python docs/demo.py FOLDER` renders a folder and writes `docs/demo.webp`.
 
 ## License
 
