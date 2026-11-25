@@ -12,7 +12,7 @@ from .render import render_top_layer
 POP_START_SCALE = 1.3
 POP_SECONDS = 0.25
 FAST_ZOOM_SECONDS = 0.6
-FAST_ZOOM_AMOUNT = 0.08   # zoom 1.00 -> 1.08 in the first 0.6s, then the usual +0.04
+FAST_ZOOM_AMOUNT = 0.06   # zoom 1.00 -> 1.06 in the first 0.6s, then the usual +0.04
 
 
 def ease_out(x: float) -> float:

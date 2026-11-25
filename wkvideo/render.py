@@ -236,11 +236,21 @@ def _draw_text_block(draw, top_text: str, accent_text: str, font_path: str, top:
         _draw_centered(draw, accent_lines, load_font(font_path, accent_size), y, accent_h, LIME, _stroke(accent_size))
 
 
-def render_frame(image_path, top_text: str, accent_text: str, font_path, draw_top: bool = True) -> Image.Image:
+def _draw_logo(draw, font_path: str) -> None:
+    draw.text(
+        (WIDTH - LOGO_MARGIN, LOGO_MARGIN), LOGO_TEXT, font=load_font(font_path, LOGO_SIZE), fill=LIME,
+        anchor="ra", stroke_width=3, stroke_fill=BLACK,
+    )
+
+
+def render_frame(
+    image_path, top_text: str, accent_text: str, font_path, draw_top: bool = True, draw_logo: bool = True
+) -> Image.Image:
     """Compose one 1080x1920 RGB frame for a scene.
 
-    With ``draw_top=False`` the headline is left out so it can be animated
-    separately (see :func:`render_top_layer`).
+    ``draw_top=False`` / ``draw_logo=False`` leave the headline or logo out so
+    they can be layered separately (see :func:`render_top_layer` and
+    :func:`render_logo_layer`).
     """
     font_path = str(font_path)
     with Image.open(image_path) as src:
@@ -257,12 +267,8 @@ def render_frame(image_path, top_text: str, accent_text: str, font_path, draw_to
 
     draw = ImageDraw.Draw(frame)
 
-    # Logo, top right.
-    logo_font = load_font(font_path, LOGO_SIZE)
-    draw.text(
-        (WIDTH - LOGO_MARGIN, LOGO_MARGIN), LOGO_TEXT, font=logo_font, fill=LIME, anchor="ra",
-        stroke_width=3, stroke_fill=BLACK,
-    )
+    if draw_logo:
+        _draw_logo(draw, font_path)
     _draw_text_block(draw, top_text, accent_text, font_path, top=draw_top, accent=True)
     return frame
 
@@ -271,4 +277,11 @@ def render_top_layer(top_text: str, accent_text: str, font_path) -> Image.Image:
     """Just the headline on a transparent WIDTH x IMAGE_TOP layer."""
     layer = Image.new("RGBA", (WIDTH, IMAGE_TOP), (0, 0, 0, 0))
     _draw_text_block(ImageDraw.Draw(layer), top_text, accent_text, str(font_path), top=True, accent=False)
+    return layer
+
+
+def render_logo_layer(font_path) -> Image.Image:
+    """Just the {wk} logo on a transparent WIDTH x IMAGE_TOP layer."""
+    layer = Image.new("RGBA", (WIDTH, IMAGE_TOP), (0, 0, 0, 0))
+    _draw_logo(ImageDraw.Draw(layer), str(font_path))
     return layer

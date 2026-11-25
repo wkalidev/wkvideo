@@ -62,18 +62,20 @@ def test_hook_zoom_expression():
     expr = ffmpeg.zoom_expr(150, 30, hook=True)
     assert expr.startswith("if(lt(on,18),")
     assert f"1.0+{FAST_ZOOM_AMOUNT}*(1-pow(1-on/18,3))" in expr
-    assert ",1.1200))" in expr
+    assert f",{1.0 + FAST_ZOOM_AMOUNT + 0.04:.4f}))" in expr
     assert ffmpeg.zoom_expr(150, 30) == "min(1.0+0.0002684564*on,1.04)"
     # Very short scene: fast zoom shortened to fit.
     assert ffmpeg.zoom_expr(5, 30, hook=True).startswith("if(lt(on,4),")
 
 
 def test_hook_scene_command():
-    cmd = ffmpeg.hook_scene_command("f.png", "pop/pop_%03d.png", 2.0, "o.mp4", 30)
+    cmd = ffmpeg.hook_scene_command("f.png", "pop/pop_%03d.png", "logo.png", 2.0, "o.mp4", 30)
+    assert cmd[cmd.index("f.png") - 5 : cmd.index("f.png")] == ["-loop", "1", "-framerate", "30", "-i"]
     assert cmd[cmd.index("pop/pop_%03d.png") - 3 : cmd.index("pop/pop_%03d.png")] == ["-framerate", "30", "-i"]
     graph = cmd[cmd.index("-filter_complex") + 1]
-    assert "zoompan=z='if(lt(on,18)" in graph
-    assert "overlay=0:0:eof_action=repeat" in graph
+    # Headline composited before the zoom, logo after it.
+    assert graph.index("[0:v][1:v]overlay") < graph.index("zoompan") < graph.index("[z][2:v]overlay")
+    assert "zoompan=z='if(lt(on,18)" in graph and ":d=1:" in graph
     assert cmd[cmd.index("-frames:v") + 1] == "60"
 
 
@@ -92,6 +94,23 @@ def image_top_edge(frame, x=1000):
     raise AssertionError("image edge not found")
 
 
+def hook_zoom(n, fps=30):
+    """Python mirror of the hook zoom curve (for long scenes)."""
+    fast = round(0.6 * fps)
+    if n < fast:
+        return 1 + FAST_ZOOM_AMOUNT * (1 - (1 - n / fast) ** 3)
+    return None
+
+
+def lime_bbox(img, box):
+    crop = img.crop(box)
+    r, g, b = crop.split()
+    mask = ImageChops.multiply(ImageChops.multiply(r.point(lambda v: 255 if v > 180 else 0),
+                                                   g.point(lambda v: 255 if v > 200 else 0)),
+                               b.point(lambda v: 255 if v < 120 else 0))
+    return mask.getbbox()
+
+
 @requires_ffmpeg
 def test_hook_end_to_end(project, font, tmp_path):
     from wkvideo.pipeline import build_video
@@ -103,15 +122,22 @@ def test_hook_end_to_end(project, font, tmp_path):
     out = tmp_path / "hook.mp4"
     build_video(scenes, project / "voice.mp3", out, font, log=lambda _: None, captions=False)
 
-    f0, f18, f44 = (frame_at(out, n, tmp_path / f"{n}.png") for n in (0, 18, 44))
+    f0, f8, f18, f44 = (frame_at(out, n, tmp_path / f"{n}.png") for n in (0, 8, 18, 44))
+    peak, end = 1 + FAST_ZOOM_AMOUNT, 1 + FAST_ZOOM_AMOUNT + 0.04
     # Foreground top edge sits at 576 at zoom 1.0 and moves up as the frame
-    # zooms about its centre (y=960): 1.08 after 0.6s, 1.12 at the end.
+    # zooms about its centre (y=960): fast to `peak` by 0.6s, then to `end`.
     assert image_top_edge(f0) == pytest.approx(576, abs=3)
-    assert image_top_edge(f18) == pytest.approx(960 - 384 * 1.08, abs=3)
-    assert image_top_edge(f44) == pytest.approx(960 - 384 * 1.12, abs=3)
+    assert image_top_edge(f18) == pytest.approx(960 - 384 * peak, abs=3)
+    assert image_top_edge(f44) == pytest.approx(960 - 384 * end, abs=3)
 
-    # Headline pops: 1.3x wide on frame 0, settled at 1.0x from frame 8 on.
+    # Headline pops 1.3x -> 1.0x by frame 8, and zooms with the frame.
     band = lambda f: white_bbox(f.crop((0, 0, WIDTH, IMAGE_TOP)))
     w = lambda bb: bb[2] - bb[0]
-    assert w(band(f0)) == pytest.approx(w(band(f44)) * 1.3, rel=0.05)
-    assert w(band(frame_at(out, 8, tmp_path / "8.png"))) == pytest.approx(w(band(f44)), rel=0.03)
+    base = w(band(f44)) / end                       # unzoomed headline width
+    assert w(band(f0)) == pytest.approx(base * 1.3, rel=0.05)
+    assert w(band(f8)) == pytest.approx(base * hook_zoom(8), rel=0.04)
+
+    # Logo stays put while everything else zooms.
+    logo = (WIDTH - 320, 0, WIDTH, 160)
+    assert lime_bbox(f0, logo) is not None
+    assert lime_bbox(f0, logo) == lime_bbox(f44, logo)

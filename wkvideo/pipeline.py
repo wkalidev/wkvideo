@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Sequence
 from . import ffmpeg
 from .captions import caption_y, write_caption_track
 from .hook import write_pop_frames
-from .render import render_frame
+from .render import render_frame, render_logo_layer
 from .scenes import Scene
 from .transcribe import DEFAULT_MODEL, Word, load_or_transcribe
 
@@ -84,9 +84,13 @@ def build_video(
             clip = work / f"scene_{i:03d}.mp4"
             if i == 1:
                 # Hook punch: headline pops in, background zooms in fast.
-                render_frame(scene.image, scene.top_text, scene.accent_text, font, draw_top=False).save(frame_png)
+                render_frame(
+                    scene.image, scene.top_text, scene.accent_text, font, draw_top=False, draw_logo=False
+                ).save(frame_png)
                 pop = write_pop_frames(scene.top_text, scene.accent_text, font, work / "pop", fps)
-                ffmpeg.run(ffmpeg.hook_scene_command(frame_png, pop, scene.duration, clip, fps, exe))
+                logo = work / "logo.png"
+                render_logo_layer(font).save(logo)
+                ffmpeg.run(ffmpeg.hook_scene_command(frame_png, pop, logo, scene.duration, clip, fps, exe))
             else:
                 render_frame(scene.image, scene.top_text, scene.accent_text, font).save(frame_png)
                 ffmpeg.run(ffmpeg.scene_command(frame_png, scene.duration, clip, fps, exe))

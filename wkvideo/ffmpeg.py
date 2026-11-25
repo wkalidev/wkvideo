@@ -89,22 +89,36 @@ def zoompan_filter(frames: int, fps: int = DEFAULT_FPS, hook: bool = False) -> s
 
 
 def hook_scene_command(
-    frame_png: Path, pop_pattern: str, duration: float, out: Path, fps: int = DEFAULT_FPS, exe: str = "ffmpeg"
+    frame_png: Path,
+    pop_pattern: str,
+    logo_png: Path,
+    duration: float,
+    out: Path,
+    fps: int = DEFAULT_FPS,
+    exe: str = "ffmpeg",
 ) -> List[str]:
-    """First scene: fast-zoom background with the pop-in headline overlaid.
+    """First scene: pop-in headline and fast zoom, with a steady logo.
 
-    The headline frames are an image sequence; overlay holds the last one
-    (scale 1.0) for the rest of the scene.
+    The headline frames (an image sequence; overlay holds the last one) are
+    composited onto the frame *before* zoompan, so the headline zooms with
+    the accent line and the image. zoompan runs with d=1, one output frame
+    per input frame. The logo is overlaid after the zoom so it stays put.
     """
     frames = frame_count(duration, fps)
+    uw, uh = UPSCALE_SIZE
+    ow, oh = OUT_SIZE
     graph = (
-        f"[0:v]{zoompan_filter(frames, fps, hook=True)}[bg];"
-        f"[bg][1:v]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v]"
+        f"[0:v][1:v]overlay=0:0:eof_action=repeat:format=auto[c];"
+        f"[c]scale={uw}:{uh}:flags=lanczos,"
+        f"zoompan=z='{zoom_expr(frames, fps, hook=True)}'"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={ow}x{oh}:fps={fps}[z];"
+        f"[z][2:v]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v]"
     )
     return [
         exe, "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(frame_png),
+        "-loop", "1", "-framerate", str(fps), "-i", str(frame_png),
         "-framerate", str(fps), "-i", pop_pattern,
+        "-i", str(logo_png),
         "-filter_complex", graph, "-map", "[v]",
         "-frames:v", str(frames),
         "-r", str(fps),
