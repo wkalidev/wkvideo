@@ -19,7 +19,7 @@ is muxed in as AAC.
 ## Requirements
 
 - Python 3.9+
-- [ffmpeg](https://ffmpeg.org/) on your `PATH` (built with libx264)
+- [ffmpeg](https://ffmpeg.org/) and ffprobe on your `PATH` (built with libx264)
 - The **Inter Bold** font ([rsms.me/inter](https://rsms.me/inter/)). If it can't be found,
   wkvideo falls back to Arial Bold or DejaVu Sans Bold and prints a warning.
 
@@ -87,6 +87,7 @@ line timings, one per scene. These shapes are all accepted:
 [3.2, 2.8]
 [{"text": "Most people get this wrong", "duration": 3.2}, {"text": "Step one", "duration": 2.8}]
 [{"start": 0.0, "end": 3.2}, {"start": 3.2, "end": 6.0}]
+{"lines": [{"startSeconds": 0.0, "durationSeconds": 3.2}, {"startSeconds": 3.2, "durationSeconds": 2.8}]}
 {"lines": [3.2, 2.8]}
 {"durations": [3.2, 2.8]}
 ```
@@ -103,9 +104,9 @@ The number of lines must match the number of scenes.
 
 ### Audio length
 
-The final mux uses `-shortest`, so the output ends at whichever is shorter,
-the video or the voiceover. Make the scene durations add up to the length of
-the MP3 so that nothing gets cut off.
+wkvideo reads the MP3 length with `ffprobe` and extends the last scene so the
+video ends 0.6s after the voiceover. Audio is never cut. If the scenes already
+run past that point, they are left as they are and the end plays silently.
 
 ## Development
 

@@ -25,6 +25,26 @@ def ffmpeg_binary() -> str:
     return exe
 
 
+def ffprobe_binary() -> str:
+    exe = shutil.which("ffprobe")
+    if not exe:
+        raise FFmpegError("ffprobe not found on PATH")
+    return exe
+
+
+def probe_duration(path: Path, exe: str = "ffprobe") -> float:
+    """Return a media file's duration in seconds, as reported by ffprobe."""
+    proc = subprocess.run(
+        [exe, "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        capture_output=True, text=True,
+    )
+    try:
+        return float(proc.stdout.strip())
+    except ValueError:
+        raise FFmpegError(f"could not read duration of {path}: {proc.stderr.strip()}") from None
+
+
 def frame_count(duration: float, fps: int = DEFAULT_FPS) -> int:
     return max(1, round(duration * fps))
 
@@ -83,7 +103,7 @@ def mux_command(video: Path, audio: Path, out: Path, exe: str = "ffmpeg") -> Lis
         "-i", str(video), "-i", str(audio),
         "-map", "0:v:0", "-map", "1:a:0",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-        "-shortest", "-movflags", "+faststart",
+        "-movflags", "+faststart",
         str(out),
     ]
 

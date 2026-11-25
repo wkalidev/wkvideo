@@ -34,12 +34,28 @@ def test_scene_command():
 def test_mux_command_maps_audio():
     cmd = ffmpeg.mux_command(Path("v.mp4"), Path("a.mp3"), Path("out.mp4"))
     assert ["-map", "1:a:0"] == cmd[cmd.index("1:a:0") - 1 : cmd.index("1:a:0") + 1]
-    assert "-shortest" in cmd
+    assert "-shortest" not in cmd
 
 
 def test_concat_list_escapes_quotes(tmp_path):
     text = ffmpeg.concat_list([tmp_path / "it's.mp4"])
     assert text.startswith("file '") and r"'\''" in text
+
+
+@requires_ffmpeg
+def test_probe_duration(tmp_path):
+    mp3 = tmp_path / "a.mp3"
+    make_mp3(mp3, seconds=1.5)
+    assert ffmpeg.probe_duration(mp3, ffmpeg.ffprobe_binary()) == pytest.approx(1.5, abs=0.1)
+
+
+def test_probe_duration_bad_file(tmp_path):
+    bad = tmp_path / "bad.mp3"
+    bad.write_bytes(b"not audio")
+    if shutil.which("ffprobe") is None:
+        pytest.skip("ffprobe not installed")
+    with pytest.raises(ffmpeg.FFmpegError, match="could not read duration"):
+        ffmpeg.probe_duration(bad, ffmpeg.ffprobe_binary())
 
 
 def probe(path):
@@ -66,9 +82,12 @@ def test_end_to_end(project, font, tmp_path):
     assert (video["width"], video["height"]) == (1080, 1920)
     assert video["codec_name"] == "h264"
     assert video["r_frame_rate"] == "30/1"
-    assert int(video["nb_frames"]) == 30
+    # 0.5s + 0.5s of scenes, 2.0s of audio: last scene is extended so the
+    # video ends 0.6s after the audio (2.6s = 78 frames). Audio is not cut.
+    assert int(video["nb_frames"]) == 78
+    assert float(video["duration"]) == pytest.approx(2.6, abs=0.05)
     assert audio["codec_name"] == "aac"
-    assert float(info["format"]["duration"]) == pytest.approx(1.0, abs=0.1)
+    assert float(audio["duration"]) == pytest.approx(2.0, abs=0.1)
 
 
 def test_cli_missing_folder(tmp_path, capsys):

@@ -20,6 +20,23 @@ def find_audio(folder: Path) -> Path:
     return mp3s[0]
 
 
+AUDIO_TAIL = 0.6  # seconds of video kept after the voiceover ends
+
+
+def extend_to_audio(scenes: Sequence[Scene], audio_seconds: float, tail: float = AUDIO_TAIL) -> float:
+    """Lengthen the last scene so the video ends ``tail`` seconds after the audio.
+
+    Returns the number of seconds added. Scenes that already run past that
+    point are left alone (the extra video plays after the audio, silent).
+    """
+    total = sum(s.duration for s in scenes)
+    extra = audio_seconds + tail - total
+    if extra <= 0:
+        return 0.0
+    scenes[-1].duration += extra
+    return extra
+
+
 def build_video(
     scenes: Sequence[Scene],
     audio: Path,
@@ -34,6 +51,13 @@ def build_video(
         raise ValueError(f"scenes without a duration: {missing}; set 'duration' or pass --durations")
 
     exe = ffmpeg.ffmpeg_binary()
+    audio_seconds = ffmpeg.probe_duration(Path(audio), ffmpeg.ffprobe_binary())
+    total = sum(s.duration for s in scenes)
+    added = extend_to_audio(scenes, audio_seconds)
+    if added:
+        log(f"Audio is {audio_seconds:.2f}s: extending last scene by {added:.2f}s")
+    elif total > audio_seconds + AUDIO_TAIL:
+        log(f"Note: scenes ({total:.2f}s) run past the audio ({audio_seconds:.2f}s) + {AUDIO_TAIL}s")
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     keep = work_dir is not None
