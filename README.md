@@ -117,3 +117,7 @@ pytest
 
 The end-to-end test renders a short video and checks it with `ffprobe`. It is
 skipped when ffmpeg isn't installed.
+
+## License
+
+[MIT](LICENSE) © wkalidev
