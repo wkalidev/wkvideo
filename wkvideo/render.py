@@ -26,6 +26,8 @@ LOGO_TEXT = "{wk}"
 LOGO_SIZE = 64
 LOGO_MARGIN = 48
 
+BUNDLED_FONT = Path(__file__).resolve().parent / "fonts" / "Inter-Bold.ttf"
+
 INTER_NAMES = (
     "Inter-Bold.ttf",
     "Inter-Bold.otf",
@@ -72,10 +74,12 @@ def _search(names: Iterable[str], dirs: Iterable[Path]) -> Optional[Path]:
 
 
 def find_font(explicit: Optional[str] = None, search_dirs: Iterable[Path] = ()) -> Path:
-    """Locate Inter Bold, falling back to a common bold sans with a warning.
+    """Return the font to use, defaulting to the bundled Inter Bold.
 
-    Order: ``explicit`` path, ``WKVIDEO_FONT`` env var, ``search_dirs``
-    (e.g. the input folder and its ``fonts/`` subfolder), then system fonts.
+    Order: ``explicit`` path (``--font``), ``WKVIDEO_FONT`` env var, the
+    bundled ``wkvideo/fonts/Inter-Bold.ttf``. Only if the bundled file is
+    missing (e.g. a broken install) are ``search_dirs`` and system fonts
+    searched, falling back to a common bold sans with a warning.
     """
     for candidate in (explicit, os.environ.get("WKVIDEO_FONT")):
         if candidate:
@@ -83,6 +87,8 @@ def find_font(explicit: Optional[str] = None, search_dirs: Iterable[Path] = ()) 
             if not path.is_file():
                 raise FileNotFoundError(f"font not found: {path}")
             return path
+    if BUNDLED_FONT.is_file():
+        return BUNDLED_FONT
     dirs = _font_dirs(search_dirs)
     found = _search(INTER_NAMES, dirs)
     if found:

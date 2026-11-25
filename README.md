@@ -20,8 +20,6 @@ is muxed in as AAC.
 
 - Python 3.9+
 - [ffmpeg](https://ffmpeg.org/) and ffprobe on your `PATH` (built with libx264)
-- The **Inter Bold** font ([rsms.me/inter](https://rsms.me/inter/)). If it can't be found,
-  wkvideo falls back to Arial Bold or DejaVu Sans Bold and prints a warning.
 
 ## Install
 
@@ -38,8 +36,7 @@ my-video/
 ├── scenes.json
 ├── voiceover.mp3
 ├── 01.jpg
-├── 02.png
-└── fonts/Inter-Bold.ttf   (optional)
+└── 02.png
 ```
 
 ```bash
@@ -54,12 +51,12 @@ python -m wkvideo my-video       # same thing, without installing the script
 | `--scenes` | Scenes file. Default: `FOLDER/scenes.json` |
 | `--audio` | Voiceover MP3. Default: the only `.mp3` in the folder |
 | `--durations` | JSON file of per-line durations. Overrides the scene durations |
-| `--font` | Path to Inter Bold. Default: see below |
+| `--font` | Font file to use instead of the bundled Inter Bold |
 | `--fps` | Frame rate. Default: 30 |
 | `--keep-temp DIR` | Keep the intermediate PNG frames and per-scene clips in `DIR` |
 
-Font lookup order: `--font`, the `WKVIDEO_FONT` environment variable, the input
-folder and its `fonts/` subfolder, then the system font folders.
+Text is set in Inter Bold, which ships with wkvideo (`wkvideo/fonts/`). To use
+another font, pass `--font` or set the `WKVIDEO_FONT` environment variable.
 
 ### scenes.json
 
@@ -121,3 +118,6 @@ skipped when ffmpeg isn't installed.
 ## License
 
 [MIT](LICENSE) © wkalidev
+
+The bundled [Inter](https://github.com/rsms/inter) font (v4.1) is © The Inter
+Project Authors and licensed under the [SIL Open Font License 1.1](wkvideo/fonts/OFL.txt).

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from wkvideo.render import HEIGHT, LIME, WIDTH, find_font, fit_box, render_frame, wrap_text, load_font
+from wkvideo.render import BUNDLED_FONT, HEIGHT, LIME, WIDTH, find_font, fit_box, render_frame, wrap_text, load_font
 
 
 def close(a, b, tol=12):
@@ -54,8 +54,18 @@ def test_find_font_explicit_missing(tmp_path):
         find_font(str(tmp_path / "nope.ttf"))
 
 
-def test_find_font_prefers_folder(tmp_path, font):
-    local = tmp_path / "fonts"
-    local.mkdir()
-    (local / "Inter-Bold.ttf").write_bytes(Path(font).read_bytes())
-    assert find_font(search_dirs=[local]) == local / "Inter-Bold.ttf"
+def test_bundled_inter_is_default(monkeypatch):
+    monkeypatch.delenv("WKVIDEO_FONT", raising=False)
+    path = find_font()
+    assert path == BUNDLED_FONT and path.is_file()
+    assert (path.parent / "OFL.txt").is_file()
+    assert load_font(str(path), 40).getname() == ("Inter", "Bold")
+
+
+def test_font_overrides(tmp_path, monkeypatch, font):
+    custom = tmp_path / "custom.ttf"
+    custom.write_bytes(Path(font).read_bytes())
+    monkeypatch.setenv("WKVIDEO_FONT", str(custom))
+    assert find_font() == custom
+    monkeypatch.delenv("WKVIDEO_FONT")
+    assert find_font(str(custom)) == custom

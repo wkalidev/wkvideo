@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scenes", type=Path, help="scenes file (default: FOLDER/scenes.json)")
     p.add_argument("--audio", type=Path, help="voiceover MP3 (default: the only .mp3 in FOLDER)")
     p.add_argument("--durations", type=Path, help="JSON file with per-line durations; overrides scene durations")
-    p.add_argument("--font", help="path to Inter Bold (default: search FOLDER, WKVIDEO_FONT, system fonts)")
+    p.add_argument("--font", help="font file to use instead of the bundled Inter Bold (or set WKVIDEO_FONT)")
     p.add_argument("--fps", type=int, default=DEFAULT_FPS, help=f"frame rate (default: {DEFAULT_FPS})")
     p.add_argument("--keep-temp", type=Path, metavar="DIR", help="keep intermediate frames and clips in DIR")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")

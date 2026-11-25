@@ -21,12 +21,9 @@ def project(tmp_path):
 
 @pytest.fixture
 def font():
-    from wkvideo.render import find_font
-    import warnings
+    from wkvideo.render import BUNDLED_FONT
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        return find_font()
+    return BUNDLED_FONT
 
 
 requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")

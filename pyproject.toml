@@ -7,7 +7,7 @@ name = "wkvideo"
 version = "0.1.0"
 description = "Turn images, a voiceover MP3 and a scenes.json into a 1080x1920 vertical MP4."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "MIT (code); OFL-1.1 (bundled Inter font)" }
 requires-python = ">=3.9"
 dependencies = ["Pillow>=10.0"]
 
@@ -19,6 +19,9 @@ wkvideo = "wkvideo.cli:main"
 
 [tool.setuptools]
 packages = ["wkvideo"]
+
+[tool.setuptools.package-data]
+wkvideo = ["fonts/*.ttf", "fonts/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
