@@ -95,10 +95,14 @@ def test_end_to_end(project, font, tmp_path):
     assert (video["width"], video["height"]) == (1080, 1920)
     assert video["codec_name"] == "h264"
     assert video["r_frame_rate"] == "30/1"
-    # 0.5s + 0.5s of scenes, 2.0s of audio: last scene is extended so the
-    # video ends 0.6s after the audio (2.6s = 78 frames). Audio is not cut.
-    assert int(video["nb_frames"]) == 78
-    assert float(video["duration"]) == pytest.approx(2.6, abs=0.05)
+    # 0.5s + 0.5s of scenes, ~2.0s of audio: the last scene is extended so the
+    # video ends 0.6s after the audio. Audio is not cut. The expected length
+    # comes from the MP3 as ffprobe measures it, since ffmpeg versions differ
+    # in whether they count the MP3 encoder padding (2.0s vs ~2.04s).
+    voice_seconds = ffmpeg.probe_duration(project / "voice.mp3", ffmpeg.ffprobe_binary())
+    expected_frames = ffmpeg.frame_count(0.5) + ffmpeg.frame_count(voice_seconds + 0.6 - 0.5)
+    assert int(video["nb_frames"]) == expected_frames
+    assert float(video["duration"]) == pytest.approx(voice_seconds + 0.6, abs=1.5 / 30)
     assert audio["codec_name"] == "aac"
     assert float(audio["duration"]) == pytest.approx(2.0, abs=0.1)
 
