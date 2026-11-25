@@ -6,6 +6,7 @@ Supported shapes (durations in seconds)::
     [{"text": "First line", "duration": 2.4}, ...]
     [{"start": 0.0, "end": 2.4}, ...]          # duration = end - start
     {"lines": [ ...any of the above... ]}
+    {"lines": [{"durationSeconds": 2.4, "startSeconds": 0.0}, ...]}   # vidIQ
     {"durations": [2.4, 3.1, 1.8]}
 """
 
@@ -28,6 +29,8 @@ def _line_duration(item, index: int) -> float:
     elif isinstance(item, dict):
         if "duration" in item:
             value = item["duration"]
+        elif "durationSeconds" in item:  # vidIQ voiceover output
+            value = item["durationSeconds"]
         elif "start" in item and "end" in item:
             try:
                 value = float(item["end"]) - float(item["start"])

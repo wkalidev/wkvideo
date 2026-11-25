@@ -32,6 +32,25 @@ def test_read_line_durations_file(tmp_path):
     assert read_line_durations(path) == [2.2]
 
 
+def test_read_vidiq_voiceover_output(tmp_path):
+    vidiq = {
+        "voice": "narrator",
+        "lines": [
+            {"text": "Most people get this wrong", "startSeconds": 0.0, "durationSeconds": 3.2},
+            {"text": "Here's why", "startSeconds": 3.2, "durationSeconds": 2.8},
+            {"text": "No start given", "durationSeconds": "1.5"},
+        ],
+    }
+    path = tmp_path / "voiceover.json"
+    path.write_text(json.dumps(vidiq), encoding="utf-8")
+    assert read_line_durations(path) == pytest.approx([3.2, 2.8, 1.5])
+
+
+def test_vidiq_rejects_non_positive_duration():
+    with pytest.raises(DurationsError, match="> 0"):
+        parse_line_durations({"lines": [{"startSeconds": 0, "durationSeconds": 0}]})
+
+
 def test_read_missing_file(tmp_path):
     with pytest.raises(DurationsError, match="not found"):
         read_line_durations(tmp_path / "missing.json")
