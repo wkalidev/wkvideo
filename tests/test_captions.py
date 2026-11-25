@@ -54,6 +54,33 @@ def test_no_single_word_groups():
     assert all(len(g) >= 2 for g in groups)
 
 
+def test_phrase_end_after_full_group_carries_a_word():
+    groups = group_words(words("a repo to clone and run on your laptop. that code can steal"))
+    assert ["your", "laptop"] in texts(groups)
+    assert all(not (g[0] == "laptop") for g in texts(groups))
+
+
+def test_real_transcript_groups():
+    raw = ("A recruiter from a big crypto exchange just messaged you on LinkedIn? Check this before you reply. "
+           "Fake recruiters are hitting devs right now.")
+    groups = texts(group_words(words(raw), lambda ws: len(" ".join(ws)) <= 18))
+    assert all(2 <= len(g) <= 4 for g in groups)
+    # No group spans a sentence end.
+    for g in groups:
+        assert not any(w.endswith(("?", ".")) for w in g[:-1]), g
+
+
+@requires_ffmpeg
+def test_load_audio_decodes_16k_mono(tmp_path):
+    from wkvideo.transcribe import SAMPLE_RATE, load_audio
+
+    make_mp3(tmp_path / "a.mp3", seconds=1.0)
+    samples = load_audio(tmp_path / "a.mp3")
+    assert str(samples.dtype) == "float32"
+    assert len(samples) == pytest.approx(SAMPLE_RATE, rel=0.1)
+    assert 0.1 < abs(samples).max() <= 1.0
+
+
 def test_width_limit_breaks_groups():
     fits = lambda ws: len(" ".join(ws)) <= 12
     groups = group_words(words("aaaa bbbb cccc dddd eeee ffff"), fits)

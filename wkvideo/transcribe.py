@@ -7,6 +7,7 @@ transcription itself runs entirely on this machine.
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -25,6 +26,26 @@ class TranscriptionError(RuntimeError):
     pass
 
 
+SAMPLE_RATE = 16000
+
+
+def load_audio(audio: Path, exe: str = "ffmpeg"):
+    """Decode audio to 16 kHz mono float32 samples with ffmpeg.
+
+    faster-whisper can decode files itself via PyAV, but that breaks with some
+    PyAV releases; ffmpeg is already required, so use it directly.
+    """
+    import numpy as np
+
+    proc = subprocess.run(
+        [exe, "-nostdin", "-v", "error", "-i", str(audio), "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"],
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        raise TranscriptionError(f"could not decode {audio}: {proc.stderr.decode(errors='replace').strip()}")
+    return np.frombuffer(proc.stdout, dtype=np.float32)
+
+
 def transcribe_words(audio: Path, model_size: str = DEFAULT_MODEL, language: Optional[str] = None) -> List[Word]:
     try:
         from faster_whisper import WhisperModel
@@ -32,8 +53,9 @@ def transcribe_words(audio: Path, model_size: str = DEFAULT_MODEL, language: Opt
         raise TranscriptionError(
             "captions need faster-whisper: pip install faster-whisper (or use --captions off)"
         ) from None
+    samples = load_audio(audio)
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
-    segments, _info = model.transcribe(str(audio), word_timestamps=True, language=language)
+    segments, _info = model.transcribe(samples, word_timestamps=True, language=language)
     words = [
         Word(w.word.strip(), float(w.start), float(w.end))
         for segment in segments

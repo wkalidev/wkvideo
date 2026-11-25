@@ -69,8 +69,13 @@ def group_words(words: Sequence[Word], fits: Callable[[List[str]], bool] = lambd
 
     for i, word in enumerate(cleaned):
         if current and (len(current) >= MAX_WORDS or not fits([w.text for w in current + [word]])):
+            # If this word ends a phrase, carry the previous word along so the
+            # phrase doesn't end alone at the start of the next group.
+            carry: List[Word] = []
+            if ends[i] and len(current) > MIN_WORDS and fits([current[-1].text, word.text]):
+                carry = [current.pop()]
             groups.append(current)
-            current = []
+            current = carry
         current.append(word)
         nxt = cleaned[i + 1] if i + 1 < len(cleaned) else None
         pause = nxt is not None and nxt.start - word.end >= PAUSE_BREAK
