@@ -52,6 +52,8 @@ python -m wkvideo my-video       # same thing, without installing the script
 | `--audio` | Voiceover MP3. Default: the only `.mp3` in the folder |
 | `--durations` | JSON file of per-line durations. Overrides the scene durations |
 | `--font` | Font file to use instead of the bundled Inter Bold |
+| `--captions on\|off` | Word-by-word captions. Default: `on` |
+| `--whisper-model` | faster-whisper model used for captions. Default: `small` |
 | `--fps` | Frame rate. Default: 30 |
 | `--keep-temp DIR` | Keep the intermediate PNG frames and per-scene clips in `DIR` |
 
@@ -78,6 +80,24 @@ Text is fitted automatically. The headline starts at 84px and the accent line at
 67px. Each one shrinks, down to 60px, to stay on a single line. Only text that
 still doesn't fit at 60px is wrapped, and the wrap never leaves a single word
 alone on the last line. The accent line is never larger than the headline.
+
+### Captions
+
+By default, wkvideo transcribes the voiceover with
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) to get the timing
+of each word, then shows the words 2 to 4 at a time. Captions are centred at
+70% of the height, in Inter Bold, white with a black stroke, and the word
+being spoken is highlighted in lime.
+
+Transcription runs locally on the CPU, with no cloud API. The first run
+downloads the Whisper model (about 480 MB for `small`) from Hugging Face and
+caches it. The transcript is saved next to the audio as `<name>.words.json`
+and reused until the MP3 or the model changes. To fix a misheard word, edit
+the `"text"` fields in that file and re-run.
+
+A caption group ends after 4 words, at punctuation, at a pause in the speech,
+or when the next word would not fit on one line. A group is never a single
+word.
 
 ### Per-line durations
 

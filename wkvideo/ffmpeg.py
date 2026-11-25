@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
 OUT_SIZE = (1080, 1920)
 UPSCALE_SIZE = (2160, 3840)
@@ -97,15 +97,32 @@ def concat_command(list_file: Path, out: Path, exe: str = "ffmpeg") -> List[str]
     ]
 
 
-def mux_command(video: Path, audio: Path, out: Path, exe: str = "ffmpeg") -> List[str]:
-    return [
-        exe, "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(video), "-i", str(audio),
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        str(out),
-    ]
+def final_command(
+    video: Path,
+    voice: Path,
+    out: Path,
+    captions: Optional[Path] = None,
+    caption_y: int = 0,
+    fps: int = DEFAULT_FPS,
+    exe: str = "ffmpeg",
+) -> List[str]:
+    """Add the voiceover and, optionally, overlay the caption track.
+
+    Without captions the video stream is copied; with them it is re-encoded.
+    """
+    cmd = [exe, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video), "-i", str(voice)]
+    if captions is not None:
+        cmd += ["-f", "concat", "-safe", "0", "-i", str(captions)]
+        cmd += [
+            "-filter_complex",
+            f"[0:v][2:v]overlay=0:{caption_y}:eof_action=pass:format=auto,format=yuv420p[v]",
+            "-map", "[v]", "-map", "1:a:0",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-r", str(fps),
+        ]
+    else:
+        cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy"]
+    cmd += ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)]
+    return cmd
 
 
 def run(cmd: Sequence[str]) -> None:

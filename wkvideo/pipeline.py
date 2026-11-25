@@ -1,4 +1,4 @@
-"""End-to-end build: scenes -> frames -> zoomed clips -> concatenated MP4 + MP3."""
+"""End-to-end build: scenes -> frames -> zoomed clips -> concatenated MP4 -> captions + audio."""
 
 from __future__ import annotations
 
@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
 from . import ffmpeg
+from .captions import caption_y, write_caption_track
 from .render import render_frame
 from .scenes import Scene
+from .transcribe import DEFAULT_MODEL, Word, load_or_transcribe
 
 
 def find_audio(folder: Path) -> Path:
@@ -45,7 +47,11 @@ def build_video(
     fps: int = ffmpeg.DEFAULT_FPS,
     work_dir: Optional[Path] = None,
     log: Callable[[str], None] = print,
+    captions: bool = True,
+    whisper_model: str = DEFAULT_MODEL,
+    words: Optional[List[Word]] = None,
 ) -> Path:
+    """Render the video. ``words`` skips transcription (used by tests)."""
     missing = [i for i, s in enumerate(scenes, start=1) if not s.duration]
     if missing:
         raise ValueError(f"scenes without a duration: {missing}; set 'duration' or pass --durations")
@@ -58,6 +64,8 @@ def build_video(
         log(f"Audio is {audio_seconds:.2f}s: extending last scene by {added:.2f}s")
     elif total > audio_seconds + AUDIO_TAIL:
         log(f"Note: scenes ({total:.2f}s) run past the audio ({audio_seconds:.2f}s) + {AUDIO_TAIL}s")
+    if captions and words is None:
+        words = load_or_transcribe(Path(audio), whisper_model, log=log)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     keep = work_dir is not None
@@ -79,8 +87,13 @@ def build_video(
         silent = work / "video_silent.mp4"
         ffmpeg.run(ffmpeg.concat_command(list_file, silent, exe))
 
+        track = None
+        if captions:
+            log(f"Rendering captions ({len(words)} words)")
+            video_seconds = sum(ffmpeg.frame_count(s.duration, fps) for s in scenes) / fps
+            track = write_caption_track(words, font, work / "captions", video_seconds)
         log(f"Muxing audio {Path(audio).name}")
-        ffmpeg.run(ffmpeg.mux_command(silent, Path(audio), output, exe))
+        ffmpeg.run(ffmpeg.final_command(silent, Path(audio), output, track, caption_y(), fps, exe))
     finally:
         if not keep:
             shutil.rmtree(work, ignore_errors=True)

@@ -31,10 +31,20 @@ def test_scene_command():
     assert cmd[-1] == "o.mp4"
 
 
-def test_mux_command_maps_audio():
-    cmd = ffmpeg.mux_command(Path("v.mp4"), Path("a.mp3"), Path("out.mp4"))
+def test_final_command_without_captions_copies_video():
+    cmd = ffmpeg.final_command(Path("v.mp4"), Path("a.mp3"), Path("out.mp4"))
     assert ["-map", "1:a:0"] == cmd[cmd.index("1:a:0") - 1 : cmd.index("1:a:0") + 1]
-    assert "-shortest" not in cmd
+    assert cmd[cmd.index("-c:v") + 1] == "copy"
+    assert "-shortest" not in cmd and "-filter_complex" not in cmd
+
+
+def test_final_command_overlays_captions():
+    cmd = ffmpeg.final_command(Path("v.mp4"), Path("a.mp3"), Path("out.mp4"), Path("c.ffconcat"), 1244)
+    i = cmd.index("c.ffconcat")
+    assert cmd[i - 5 : i] == ["-f", "concat", "-safe", "0", "-i"]
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "[0:v][2:v]overlay=0:1244" in graph
+    assert cmd[cmd.index("-c:v") + 1] == "libx264"
 
 
 def test_concat_list_escapes_quotes(tmp_path):
@@ -73,7 +83,10 @@ def test_end_to_end(project, font, tmp_path):
     (project / "durations.json").write_text(json.dumps([0.5, 0.5]), encoding="utf-8")
     out = tmp_path / "out" / "video.mp4"
 
-    code = main([str(project), "-o", str(out), "--font", str(font), "--durations", str(project / "durations.json")])
+    code = main([
+        str(project), "-o", str(out), "--font", str(font),
+        "--durations", str(project / "durations.json"), "--captions", "off",
+    ])
     assert code == 0 and out.is_file()
 
     info = probe(out)
