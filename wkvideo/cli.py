@@ -31,6 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="word-by-word captions transcribed locally with faster-whisper (default: on)")
     p.add_argument("--whisper-model", default=DEFAULT_MODEL,
                    help=f"faster-whisper model for captions (default: {DEFAULT_MODEL})")
+    p.add_argument("--music", type=Path, metavar="PATH",
+                   help="background music mixed at -22 dB under the voice, faded out over the last 1s")
     p.add_argument("--fps", type=int, default=DEFAULT_FPS, help=f"frame rate (default: {DEFAULT_FPS})")
     p.add_argument("--keep-temp", type=Path, metavar="DIR", help="keep intermediate frames and clips in DIR")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -52,7 +54,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         output = args.output or folder / "output.mp4"
         build_video(
             scenes, audio, output, font, fps=args.fps, work_dir=args.keep_temp,
-            captions=args.captions == "on", whisper_model=args.whisper_model,
+            captions=args.captions == "on", whisper_model=args.whisper_model, music=args.music,
         )
     except (SceneError, DurationsError, FFmpegError, TranscriptionError, FileNotFoundError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)

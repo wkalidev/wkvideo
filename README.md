@@ -56,6 +56,7 @@ python -m wkvideo my-video       # same thing, without installing the script
 | `--font` | Font file to use instead of the bundled Inter Bold |
 | `--captions on\|off` | Word-by-word captions. Default: `on` |
 | `--whisper-model` | faster-whisper model used for captions. Default: `small` |
+| `--music PATH` | Background music mixed under the voice. Optional |
 | `--fps` | Frame rate. Default: 30 |
 | `--keep-temp DIR` | Keep the intermediate PNG frames and per-scene clips in `DIR` |
 
@@ -130,6 +131,12 @@ The number of lines must match the number of scenes.
 wkvideo reads the MP3 length with `ffprobe` and extends the last scene so the
 video ends 0.6s after the voiceover. Audio is never cut. If the scenes already
 run past that point, they are left as they are and the end plays silently.
+
+### Background music
+
+`--music track.mp3` mixes a music track under the voiceover. The music is
+turned down by 22 dB, looped if it's shorter than the video, cut to the video's
+length and faded out over the last second. The voice level is not changed.
 
 ## Development
 

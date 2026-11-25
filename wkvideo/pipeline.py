@@ -51,8 +51,11 @@ def build_video(
     captions: bool = True,
     whisper_model: str = DEFAULT_MODEL,
     words: Optional[List[Word]] = None,
+    music: Optional[Path] = None,
 ) -> Path:
     """Render the video. ``words`` skips transcription (used by tests)."""
+    if music is not None and not Path(music).is_file():
+        raise FileNotFoundError(f"music file not found: {music}")
     missing = [i for i, s in enumerate(scenes, start=1) if not s.duration]
     if missing:
         raise ValueError(f"scenes without a duration: {missing}; set 'duration' or pass --durations")
@@ -94,13 +97,15 @@ def build_video(
         silent = work / "video_silent.mp4"
         ffmpeg.run(ffmpeg.concat_command(list_file, silent, exe))
 
+        video_seconds = sum(ffmpeg.frame_count(s.duration, fps) for s in scenes) / fps
         track = None
         if captions:
             log(f"Rendering captions ({len(words)} words)")
-            video_seconds = sum(ffmpeg.frame_count(s.duration, fps) for s in scenes) / fps
             track = write_caption_track(words, font, work / "captions", video_seconds)
-        log(f"Muxing audio {Path(audio).name}")
-        ffmpeg.run(ffmpeg.final_command(silent, Path(audio), output, track, caption_y(), fps, exe))
+        log(f"Muxing audio {Path(audio).name}" + (f" with music {Path(music).name}" if music else ""))
+        ffmpeg.run(ffmpeg.final_command(
+            silent, Path(audio), output, track, caption_y(), fps, exe, music=music, duration=video_seconds,
+        ))
     finally:
         if not keep:
             shutil.rmtree(work, ignore_errors=True)

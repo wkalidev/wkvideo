@@ -144,6 +144,10 @@ def concat_command(list_file: Path, out: Path, exe: str = "ffmpeg") -> List[str]
     ]
 
 
+MUSIC_GAIN_DB = -22
+MUSIC_FADE_SECONDS = 1.0
+
+
 def final_command(
     video: Path,
     voice: Path,
@@ -152,22 +156,50 @@ def final_command(
     caption_y: int = 0,
     fps: int = DEFAULT_FPS,
     exe: str = "ffmpeg",
+    music: Optional[Path] = None,
+    duration: Optional[float] = None,
 ) -> List[str]:
-    """Add the voiceover and, optionally, overlay the caption track.
+    """Add the voiceover, and optionally captions and background music.
 
-    Without captions the video stream is copied; with them it is re-encoded.
+    Captions are overlaid at ``caption_y`` (the video is then re-encoded;
+    otherwise it is copied). Music is looped if needed, lowered by
+    MUSIC_GAIN_DB, cut to ``duration`` (the video length) and faded out over
+    the last MUSIC_FADE_SECONDS, then mixed under the voice.
     """
     cmd = [exe, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video), "-i", str(voice)]
+    graph: List[str] = []
+    next_input = 2
+    video_map, audio_map = "0:v:0", "1:a:0"
+
     if captions is not None:
         cmd += ["-f", "concat", "-safe", "0", "-i", str(captions)]
-        cmd += [
-            "-filter_complex",
-            f"[0:v][2:v]overlay=0:{caption_y}:eof_action=pass:format=auto,format=yuv420p[v]",
-            "-map", "[v]", "-map", "1:a:0",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-r", str(fps),
-        ]
+        graph.append(f"[0:v][{next_input}:v]overlay=0:{caption_y}:eof_action=pass:format=auto,format=yuv420p[v]")
+        video_map = "[v]"
+        next_input += 1
+
+    if music is not None:
+        if duration is None:
+            raise ValueError("duration is required when mixing music")
+        cmd += ["-stream_loop", "-1", "-i", str(music)]
+        fade_start = max(duration - MUSIC_FADE_SECONDS, 0.0)
+        graph.append(
+            f"[{next_input}:a]volume={MUSIC_GAIN_DB}dB,atrim=0:{duration:.3f},asetpts=N/SR/TB,"
+            f"afade=t=out:st={fade_start:.3f}:d={MUSIC_FADE_SECONDS}[m];"
+            # Pad the voice to the video length and end the mix on it:
+            # amix's duration=longest drops the final frames.
+            f"[1:a]apad=whole_dur={duration:.3f}[vo];"
+            f"[vo][m]amix=inputs=2:duration=first:normalize=0[a]"
+        )
+        audio_map = "[a]"
+        next_input += 1
+
+    if graph:
+        cmd += ["-filter_complex", ";".join(graph)]
+    cmd += ["-map", video_map, "-map", audio_map]
+    if captions is not None:
+        cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-r", str(fps)]
     else:
-        cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy"]
+        cmd += ["-c:v", "copy"]
     cmd += ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)]
     return cmd
 
