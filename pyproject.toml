@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wkvideo"
+version = "0.1.0"
+description = "Turn images, a voiceover MP3 and a scenes.json into a 1080x1920 vertical MP4."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["Pillow>=10.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+wkvideo = "wkvideo.cli:main"
+
+[tool.setuptools]
+packages = ["wkvideo"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
