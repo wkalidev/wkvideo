@@ -22,6 +22,10 @@ BOTTOM_MARGIN = 60
 SIDE_MARGIN = 60
 BLUR_RADIUS = 40
 BACKGROUND_BRIGHTNESS = 0.45
+TOP_SIZE = 84               # headline size before any shrinking
+ACCENT_RATIO = 0.8          # accent starts at 80% of the headline size
+MIN_SINGLE_LINE_SIZE = 60   # shrink to this before wrapping
+MIN_TEXT_SIZE = 32          # last resort if wrapped text overflows the band
 LOGO_TEXT = "{wk}"
 LOGO_SIZE = 64
 LOGO_MARGIN = 48
@@ -124,21 +128,30 @@ def fit_box(src: Tuple[int, int], max_w: int, max_h: int) -> Tuple[int, int]:
     return max(1, round(w * scale)), max(1, round(h * scale))
 
 
+def _fits(font: ImageFont.FreeTypeFont, text: str, max_width: int, stroke: int) -> bool:
+    return font.getlength(text) + 2 * stroke <= max_width
+
+
 def wrap_text(text: str, font: ImageFont.FreeTypeFont, max_width: int, stroke: int = 0) -> List[str]:
+    """Greedy word wrap that never leaves a single word alone on the last line."""
     lines: List[str] = []
     for paragraph in text.splitlines() or [""]:
         words = paragraph.split()
         if not words:
             continue
-        line = words[0]
+        para: List[List[str]] = [[words[0]]]
         for word in words[1:]:
-            trial = f"{line} {word}"
-            if font.getlength(trial) + 2 * stroke <= max_width:
-                line = trial
+            if _fits(font, " ".join(para[-1] + [word]), max_width, stroke):
+                para[-1].append(word)
             else:
-                lines.append(line)
-                line = word
-        lines.append(line)
+                para.append([word])
+        # Orphan fix: pull the previous line's last word down to join it.
+        if len(para) >= 2 and len(para[-1]) == 1 and len(para[-2]) > 1:
+            candidate = [para[-2][-1]] + para[-1]
+            if _fits(font, " ".join(candidate), max_width, stroke):
+                para[-2] = para[-2][:-1]
+                para[-1] = candidate
+        lines.extend(" ".join(line) for line in para)
     return lines
 
 
@@ -146,22 +159,47 @@ def _stroke(size: int) -> int:
     return max(2, size // 14)
 
 
+def fit_text(text: str, font_path: str, max_w: int, start: int, floor: int = MIN_SINGLE_LINE_SIZE):
+    """Return ``(size, lines)`` for one text element.
+
+    Shrinks from ``start`` down to ``floor`` to keep each paragraph on a
+    single line; only if it still doesn't fit at ``floor`` is it wrapped
+    (at ``floor``).
+    """
+    paragraphs = [" ".join(p.split()) for p in text.splitlines() if p.strip()]
+    if not paragraphs:
+        return start, []
+    for size in range(start, floor - 1, -1):
+        font = load_font(font_path, size)
+        if all(_fits(font, p, max_w, _stroke(size)) for p in paragraphs):
+            return size, paragraphs
+    return floor, wrap_text("\n".join(paragraphs), load_font(font_path, floor), max_w, _stroke(floor))
+
+
 def _layout_block(top: str, accent: str, font_path: str, max_w: int, max_h: int):
-    """Pick the largest font size whose wrapped text fits the band."""
-    for size in range(84, 31, -4):
-        accent_size = round(size * 0.8)
-        top_font, accent_font = load_font(font_path, size), load_font(font_path, accent_size)
-        top_lines = wrap_text(top, top_font, max_w, _stroke(size))
-        accent_lines = wrap_text(accent, accent_font, max_w, _stroke(accent_size))
-        line_h, accent_h = round(size * 1.18), round(accent_size * 1.18)
-        gap = round(size * 0.35) if top_lines and accent_lines else 0
+    """Size and wrap the top and accent text so the block fits the band.
+
+    Normally sizes stay within [MIN_SINGLE_LINE_SIZE, TOP_SIZE]. Only if the
+    wrapped block is still too tall for the band is everything shrunk further.
+    """
+    for cap in range(TOP_SIZE, MIN_TEXT_SIZE - 1, -4):
+        floor = min(MIN_SINGLE_LINE_SIZE, cap)
+        top_size, top_lines = fit_text(top, font_path, max_w, cap, floor)
+        accent_start = round(cap * ACCENT_RATIO)
+        if top_lines:  # keep the accent no larger than the headline
+            accent_start = min(accent_start, top_size)
+        accent_size, accent_lines = fit_text(accent, font_path, max_w, max(accent_start, floor), floor)
+        line_h, accent_h = round(top_size * 1.18), round(accent_size * 1.18)
+        gap = round(top_size * 0.35) if top_lines and accent_lines else 0
         total = len(top_lines) * line_h + gap + len(accent_lines) * accent_h
-        too_wide = any(top_font.getlength(l) > max_w for l in top_lines) or any(
-            accent_font.getlength(l) > max_w for l in accent_lines
+        too_wide = any(
+            not _fits(load_font(font_path, sz), line, max_w, 0)
+            for sz, lines in ((top_size, top_lines), (accent_size, accent_lines))
+            for line in lines
         )
         if total <= max_h and not too_wide:
             break
-    return size, top_lines, accent_lines, line_h, accent_h, gap, total
+    return top_size, accent_size, top_lines, accent_lines, line_h, accent_h, gap, total
 
 
 def _draw_centered(draw, lines, font, y, line_h, fill, stroke):
@@ -204,10 +242,9 @@ def render_frame(image_path, top_text: str, accent_text: str, font_path) -> Imag
     band_top, band_bottom = logo_bottom + 30, img_top - 30
     max_w = WIDTH - 2 * SIDE_MARGIN
     if top_text.strip() or accent_text.strip():
-        size, top_lines, accent_lines, line_h, accent_h, gap, total = _layout_block(
+        size, accent_size, top_lines, accent_lines, line_h, accent_h, gap, total = _layout_block(
             top_text, accent_text, font_path, max_w, band_bottom - band_top
         )
-        accent_size = round(size * 0.8)
         y = band_top + max(0, (band_bottom - band_top - total) // 2)
         y = _draw_centered(draw, top_lines, load_font(font_path, size), y, line_h, WHITE, _stroke(size))
         _draw_centered(

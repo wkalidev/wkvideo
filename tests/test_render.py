@@ -69,3 +69,89 @@ def test_font_overrides(tmp_path, monkeypatch, font):
     assert find_font() == custom
     monkeypatch.delenv("WKVIDEO_FONT")
     assert find_font(str(custom)) == custom
+
+
+# --- shrink-before-wrap and orphan handling ---------------------------------
+
+from wkvideo.render import MIN_SINGLE_LINE_SIZE, TOP_SIZE, _layout_block, fit_text
+
+MAX_W = WIDTH - 2 * 60
+BAND_H = 392
+
+
+def text_of_width(font_path, size, target):
+    """Repeat a word until the text is at least ``target`` px wide at ``size``."""
+    font = load_font(str(font_path), size)
+    words = ["word"]
+    while font.getlength(" ".join(words)) < target:
+        words.append("word")
+    return " ".join(words)
+
+
+def test_short_text_keeps_full_size(font):
+    size, lines = fit_text("check this", str(font), MAX_W, TOP_SIZE)
+    assert size == TOP_SIZE and lines == ["check this"]
+
+
+def test_shrinks_to_stay_on_one_line(font):
+    # Too wide at 84px, but fits at 84 * 0.8 = ~67px.
+    text = text_of_width(font, TOP_SIZE, MAX_W * 1.15)
+    size, lines = fit_text(text, str(font), MAX_W, TOP_SIZE)
+    assert lines == [text]
+    assert MIN_SINGLE_LINE_SIZE <= size < TOP_SIZE
+
+
+def test_wraps_at_60px_only_when_needed(font):
+    text = text_of_width(font, MIN_SINGLE_LINE_SIZE, MAX_W * 1.6)
+    size, lines = fit_text(text, str(font), MAX_W, TOP_SIZE)
+    assert size == MIN_SINGLE_LINE_SIZE
+    assert len(lines) == 2
+    f = load_font(str(font), size)
+    assert all(f.getlength(l) <= MAX_W for l in lines)
+
+
+def test_no_single_word_on_last_line(font):
+    f = load_font(str(font), 60)
+    width = f.getlength("alpha bravo charlie") + 4
+    # Greedy would give ["alpha bravo charlie", "delta"].
+    assert wrap_text("alpha bravo charlie delta", f, width) == ["alpha bravo", "charlie delta"]
+
+
+def test_orphan_left_if_unavoidable(font):
+    f = load_font(str(font), 60)
+    width = f.getlength("supercalifragilistic") + 4
+    # Joining the last two words can never fit, so the lone word stays.
+    assert wrap_text("supercalifragilistic expialidocious", f, width) == [
+        "supercalifragilistic", "expialidocious",
+    ]
+
+
+def test_wrapped_text_never_ends_in_orphan(font):
+    f = load_font(str(font), 60)
+    for n in range(4, 30):
+        lines = wrap_text(" ".join(f"w{i}" for i in range(n)), f, 300)
+        if len(lines) > 1:
+            assert len(lines[-1].split()) > 1, lines
+
+
+def test_real_lines_shrink_or_wrap_cleanly(font):
+    # Fits at >= 60px: stays on one line.
+    top_size, accent_size, top_lines, accent_lines, *_ = _layout_block(
+        "the offer sounds perfect", "remote, any role, flexible hours", str(font), MAX_W, BAND_H
+    )
+    assert top_lines == ["the offer sounds perfect"]
+    assert accent_lines == ["remote, any role, flexible hours"]
+    assert MIN_SINGLE_LINE_SIZE <= accent_size <= top_size
+
+    # Too wide even at 60px: wraps at 60px, two words on the last line.
+    _, accent_size, _, accent_lines, *_ = _layout_block(
+        "fake recruiters are hitting devs", "old accounts, new photo, big logo", str(font), MAX_W, BAND_H
+    )
+    assert accent_size == MIN_SINGLE_LINE_SIZE
+    assert accent_lines == ["old accounts, new photo,", "big logo"]
+
+
+def test_accent_never_larger_than_headline(font):
+    top = text_of_width(font, TOP_SIZE, MAX_W * 1.2)  # forces the headline to shrink
+    top_size, accent_size, *_ = _layout_block(top, "short", str(font), MAX_W, BAND_H)
+    assert accent_size <= top_size

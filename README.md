@@ -72,8 +72,12 @@ another font, pass `--font` or set the `WKVIDEO_FONT` environment variable.
 - `top` / `top_text`: white headline. Optional.
 - `accent` / `accent_text`: lime line under the headline. Optional.
 
-You can also wrap the list as `{"scenes": [...]}`. Long text wraps and shrinks
-automatically to fit the space above the image.
+You can also wrap the list as `{"scenes": [...]}`.
+
+Text is fitted automatically. The headline starts at 84px and the accent line at
+67px. Each one shrinks, down to 60px, to stay on a single line. Only text that
+still doesn't fit at 60px is wrapped, and the wrap never leaves a single word
+alone on the last line. The accent line is never larger than the headline.
 
 ### Per-line durations
 
