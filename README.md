@@ -13,7 +13,9 @@ Each scene is rendered as:
 
 Every frame is upscaled to 2160×3840, then run through an ffmpeg `zoompan`
 slow zoom from 1.00 to 1.04 at 30 fps (upscaling first keeps the zoom from
-jittering). The clips are encoded with libx264 and concatenated, and the MP3
+jittering). The first scene opens with a hook punch: its top text
+pops in, scaling from 1.3× to 1.0× over 0.25s, and the image zooms in fast
+(1.00 to 1.08 over the first 0.6s, easing out) before the usual slow +0.04 zoom. The clips are encoded with libx264 and concatenated, and the MP3
 is muxed in as AAC.
 
 ## Requirements

@@ -49,22 +49,69 @@ def frame_count(duration: float, fps: int = DEFAULT_FPS) -> int:
     return max(1, round(duration * fps))
 
 
-def zoompan_filter(frames: int, fps: int = DEFAULT_FPS) -> str:
-    """Upscale to 4K, then zoom linearly from 1.00 to 1.04 over ``frames``.
+def zoom_expr(frames: int, fps: int = DEFAULT_FPS, hook: bool = False) -> str:
+    """zoompan ``z`` expression.
+
+    Normal: linear 1.00 -> 1.04 over the scene. Hook: an ease-out zoom from
+    1.00 to 1.00 + FAST_ZOOM_AMOUNT over the first FAST_ZOOM_SECONDS, then the
+    usual slow +0.04 over the rest of the scene.
+    """
+    slow = ZOOM_END - ZOOM_START
+    if not hook:
+        step = slow / max(frames - 1, 1)
+        return f"min({ZOOM_START}+{step:.10f}*on,{ZOOM_END})"
+    from .hook import FAST_ZOOM_AMOUNT, FAST_ZOOM_SECONDS
+
+    fast = max(1, min(round(FAST_ZOOM_SECONDS * fps), frames - 1))
+    peak = ZOOM_START + FAST_ZOOM_AMOUNT
+    step = slow / max(frames - 1 - fast, 1)
+    return (
+        f"if(lt(on,{fast}),{ZOOM_START}+{FAST_ZOOM_AMOUNT}*(1-pow(1-on/{fast},3)),"
+        f"min({peak}+{step:.10f}*(on-{fast}),{peak + slow:.4f}))"
+    )
+
+
+def zoompan_filter(frames: int, fps: int = DEFAULT_FPS, hook: bool = False) -> str:
+    """Upscale to 4K, then zoom over ``frames`` (see :func:`zoom_expr`).
 
     Upscaling first gives zoompan sub-pixel room, which avoids the jitter it
     produces when it crops at the output resolution.
     """
-    step = (ZOOM_END - ZOOM_START) / max(frames - 1, 1)
     uw, uh = UPSCALE_SIZE
     ow, oh = OUT_SIZE
     return (
         f"scale={uw}:{uh}:flags=lanczos,"
-        f"zoompan=z='min({ZOOM_START}+{step:.10f}*on,{ZOOM_END})'"
+        f"zoompan=z='{zoom_expr(frames, fps, hook)}'"
         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
         f":d={frames}:s={ow}x{oh}:fps={fps},"
         f"format=yuv420p"
     )
+
+
+def hook_scene_command(
+    frame_png: Path, pop_pattern: str, duration: float, out: Path, fps: int = DEFAULT_FPS, exe: str = "ffmpeg"
+) -> List[str]:
+    """First scene: fast-zoom background with the pop-in headline overlaid.
+
+    The headline frames are an image sequence; overlay holds the last one
+    (scale 1.0) for the rest of the scene.
+    """
+    frames = frame_count(duration, fps)
+    graph = (
+        f"[0:v]{zoompan_filter(frames, fps, hook=True)}[bg];"
+        f"[bg][1:v]overlay=0:0:eof_action=repeat:format=auto,format=yuv420p[v]"
+    )
+    return [
+        exe, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(frame_png),
+        "-framerate", str(fps), "-i", pop_pattern,
+        "-filter_complex", graph, "-map", "[v]",
+        "-frames:v", str(frames),
+        "-r", str(fps),
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        str(out),
+    ]
 
 
 def scene_command(frame_png: Path, duration: float, out: Path, fps: int = DEFAULT_FPS, exe: str = "ffmpeg") -> List[str]:

@@ -212,8 +212,36 @@ def _draw_centered(draw, lines, font, y, line_h, fill, stroke):
     return y
 
 
-def render_frame(image_path, top_text: str, accent_text: str, font_path) -> Image.Image:
-    """Compose one 1080x1920 RGB frame for a scene."""
+IMAGE_TOP = round(HEIGHT * IMAGE_TOP_RATIO)
+LOGO_BOTTOM = LOGO_MARGIN + round(LOGO_SIZE * 1.2)
+
+
+def _draw_text_block(draw, top_text: str, accent_text: str, font_path: str, top: bool, accent: bool) -> None:
+    """Draw the top and/or accent text, centred between the logo and the image.
+
+    The layout always accounts for both texts, so drawing them separately
+    (e.g. the animated hook headline) puts them in the same place.
+    """
+    if not (top_text.strip() or accent_text.strip()):
+        return
+    band_top, band_bottom = LOGO_BOTTOM + 30, IMAGE_TOP - 30
+    size, accent_size, top_lines, accent_lines, line_h, accent_h, gap, total = _layout_block(
+        top_text, accent_text, font_path, WIDTH - 2 * SIDE_MARGIN, band_bottom - band_top
+    )
+    y = band_top + max(0, (band_bottom - band_top - total) // 2)
+    if top:
+        _draw_centered(draw, top_lines, load_font(font_path, size), y, line_h, WHITE, _stroke(size))
+    if accent:
+        y += len(top_lines) * line_h + gap
+        _draw_centered(draw, accent_lines, load_font(font_path, accent_size), y, accent_h, LIME, _stroke(accent_size))
+
+
+def render_frame(image_path, top_text: str, accent_text: str, font_path, draw_top: bool = True) -> Image.Image:
+    """Compose one 1080x1920 RGB frame for a scene.
+
+    With ``draw_top=False`` the headline is left out so it can be animated
+    separately (see :func:`render_top_layer`).
+    """
     font_path = str(font_path)
     with Image.open(image_path) as src:
         src = ImageOps.exif_transpose(src).convert("RGB")
@@ -223,10 +251,9 @@ def render_frame(image_path, top_text: str, accent_text: str, font_path) -> Imag
         frame = ImageEnhance.Brightness(bg).enhance(BACKGROUND_BRIGHTNESS)
 
         # Foreground: 96% width, top edge at 30% height.
-        img_top = round(HEIGHT * IMAGE_TOP_RATIO)
-        fw, fh = fit_box(src.size, round(WIDTH * IMAGE_WIDTH_RATIO), HEIGHT - img_top - BOTTOM_MARGIN)
+        fw, fh = fit_box(src.size, round(WIDTH * IMAGE_WIDTH_RATIO), HEIGHT - IMAGE_TOP - BOTTOM_MARGIN)
         fg = src.resize((fw, fh), Image.LANCZOS)
-        frame.paste(fg, ((WIDTH - fw) // 2, img_top))
+        frame.paste(fg, ((WIDTH - fw) // 2, IMAGE_TOP))
 
     draw = ImageDraw.Draw(frame)
 
@@ -236,18 +263,12 @@ def render_frame(image_path, top_text: str, accent_text: str, font_path) -> Imag
         (WIDTH - LOGO_MARGIN, LOGO_MARGIN), LOGO_TEXT, font=logo_font, fill=LIME, anchor="ra",
         stroke_width=3, stroke_fill=BLACK,
     )
-    logo_bottom = LOGO_MARGIN + round(LOGO_SIZE * 1.2)
-
-    # Text block, centered in the band between the logo and the image.
-    band_top, band_bottom = logo_bottom + 30, img_top - 30
-    max_w = WIDTH - 2 * SIDE_MARGIN
-    if top_text.strip() or accent_text.strip():
-        size, accent_size, top_lines, accent_lines, line_h, accent_h, gap, total = _layout_block(
-            top_text, accent_text, font_path, max_w, band_bottom - band_top
-        )
-        y = band_top + max(0, (band_bottom - band_top - total) // 2)
-        y = _draw_centered(draw, top_lines, load_font(font_path, size), y, line_h, WHITE, _stroke(size))
-        _draw_centered(
-            draw, accent_lines, load_font(font_path, accent_size), y + gap, accent_h, LIME, _stroke(accent_size)
-        )
+    _draw_text_block(draw, top_text, accent_text, font_path, top=draw_top, accent=True)
     return frame
+
+
+def render_top_layer(top_text: str, accent_text: str, font_path) -> Image.Image:
+    """Just the headline on a transparent WIDTH x IMAGE_TOP layer."""
+    layer = Image.new("RGBA", (WIDTH, IMAGE_TOP), (0, 0, 0, 0))
+    _draw_text_block(ImageDraw.Draw(layer), top_text, accent_text, str(font_path), top=True, accent=False)
+    return layer
