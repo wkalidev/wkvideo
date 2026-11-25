@@ -216,8 +216,9 @@ def header_svg(inter: Inter) -> str:
 
 def main() -> None:
     inter = Inter()
-    (DOCS / "logo.svg").write_text(logo_svg(inter), encoding="utf-8")
-    (DOCS / "header.svg").write_text(header_svg(inter), encoding="utf-8")
+    for name, svg in (("logo.svg", logo_svg(inter)), ("header.svg", header_svg(inter))):
+        with open(DOCS / name, "w", encoding="utf-8", newline="\n") as f:
+            f.write(svg)
     for name in ("logo.svg", "header.svg"):
         print(f"wrote docs/{name} ({(DOCS / name).stat().st_size / 1024:.1f} KB)")
 
