@@ -262,25 +262,24 @@ MUSIC_GAIN_DB = -22
 MUSIC_FADE_SECONDS = 1.0
 
 # Audio polish. The voice gets gentle compression (about 2.5:1 above -21 dB,
-# so loud words come down a few dB) and a light de-ess; the final mix is then
-# normalized to -14 LUFS with a -1 dBTP ceiling, the usual level for TikTok,
-# Reels and Shorts.
+# so loud words come down a few dB) and a light de-ess. The final mix is then
+# brought to -14 LUFS with one fixed gain, and a true-peak limiter keeps it
+# under -1 dBTP: the usual level for TikTok, Reels and Shorts.
 LOUDNESS_LUFS = -14.0
 TRUE_PEAK_DB = -1.0
-LOUDNESS_RANGE = 11.0
 VOICE_COMPRESSOR = "acompressor=threshold=-21dB:ratio=2.5:attack=15:release=200:knee=4:makeup=2"
 VOICE_DEESSER = "deesser=i=0.35:m=0.5:f=0.5:s=o"
-OUTPUT_SAMPLE_RATE = 48000   # loudnorm works at 192 kHz; bring it back down
+LIMITER_OVERSAMPLE = 192000  # limit at 4x the sample rate so peaks between samples are caught
+LIMITER_MARGIN_DB = 0.3      # headroom for the AAC encoder
+OUTPUT_SAMPLE_RATE = 48000
+LOUDNESS_TOLERANCE = 0.1     # LU
+LOUDNESS_PASSES = 4
 
 
-def loudnorm_filter(measured: Optional[dict] = None) -> str:
-    """loudnorm measuring (no ``measured``) or applying a first-pass measurement linearly."""
-    f = f"loudnorm=I={LOUDNESS_LUFS:g}:TP={TRUE_PEAK_DB:g}:LRA={LOUDNESS_RANGE:g}"
-    if measured is None:
-        return f + ":print_format=json"
-    return (f + f":measured_I={measured['input_i']}:measured_TP={measured['input_tp']}"
-            f":measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}"
-            f":offset={measured['target_offset']}:linear=true:print_format=summary")
+def limiter_filter() -> str:
+    limit = 10 ** ((TRUE_PEAK_DB - LIMITER_MARGIN_DB) / 20)
+    return (f"aresample={LIMITER_OVERSAMPLE},alimiter=limit={limit:.4f}:attack=5:release=50:level=false,"
+            f"aresample={OUTPUT_SAMPLE_RATE}")
 
 
 def audio_graph(
@@ -288,41 +287,41 @@ def audio_graph(
     music_in: Optional[int] = None,
     duration: Optional[float] = None,
     polish: bool = False,
-    loudness: Optional[dict] = None,
+    gain_db: Optional[float] = None,
     measure: bool = False,
 ) -> Optional[str]:
     """Filter graph from the voice (and music) inputs to ``[a]``, or None for the voice as is.
 
-    ``polish`` compresses and de-esses the voice. ``loudness`` (a first-pass
-    measurement from :func:`measure_loudness`) normalizes the mix to
-    LOUDNESS_LUFS; ``measure`` ends the graph on a measuring loudnorm instead.
+    ``polish`` compresses and de-esses the voice. ``gain_db`` (from
+    :func:`loudness_gain`) is applied to the mix, followed by the true-peak
+    limiter. ``measure`` ends the graph on a loudnorm that only prints the
+    loudness (its output is discarded).
     """
     parts: List[str] = []
     cur = f"[{voice_in}:a]"
+    chain: List[str] = []
     if polish:
-        parts.append(f"{cur}{VOICE_COMPRESSOR},{VOICE_DEESSER}[vp]")
-        cur = "[vp]"
-    normalize = measure or loudness is not None
+        chain += [VOICE_COMPRESSOR, VOICE_DEESSER]
     if music_in is not None:
         if duration is None:
             raise ValueError("duration is required when mixing music")
         fade_start = max(duration - MUSIC_FADE_SECONDS, 0.0)
-        mixed = "[mx]" if normalize else "[a]"
         parts.append(
             f"[{music_in}:a]volume={MUSIC_GAIN_DB}dB,atrim=0:{duration:.3f},asetpts=N/SR/TB,"
             f"afade=t=out:st={fade_start:.3f}:d={MUSIC_FADE_SECONDS}[m]"
         )
         # Pad the voice to the video length and end the mix on it:
         # amix's duration=longest drops the final frames.
-        parts.append(f"{cur}apad=whole_dur={duration:.3f}[vo]")
-        parts.append(f"[vo][m]amix=inputs=2:duration=first:normalize=0{mixed}")
-        cur = mixed
-    if normalize:
-        parts.append(f"{cur}{loudnorm_filter(None if measure else loudness)},"
-                     f"aresample={OUTPUT_SAMPLE_RATE}[a]")
-    elif cur == "[vp]":
-        parts[-1] = parts[-1][: -len("[vp]")] + "[a]"
-    return ";".join(parts) if parts else None
+        parts.append(f"{cur}{','.join(chain + [f'apad=whole_dur={duration:.3f}'])}[vo]")
+        cur, chain = "[vo][m]", ["amix=inputs=2:duration=first:normalize=0"]
+    if gain_db is not None:
+        chain += [f"volume={gain_db:.2f}dB", limiter_filter()]
+    if measure:
+        chain.append(f"loudnorm=I={LOUDNESS_LUFS:g}:TP={TRUE_PEAK_DB:g}:print_format=json")
+    if not chain:
+        return None
+    parts.append(f"{cur}{','.join(chain)}[a]")
+    return ";".join(parts)
 
 
 def measure_loudness_command(
@@ -331,44 +330,61 @@ def measure_loudness_command(
     music: Optional[Path] = None,
     duration: Optional[float] = None,
     polish: bool = True,
+    gain_db: Optional[float] = None,
 ) -> List[str]:
-    """First loudnorm pass: run the mix through a measuring loudnorm, output nothing."""
+    """Run the mix (polished, with ``gain_db`` if given) through a measuring loudnorm, output nothing."""
     cmd = [exe, "-hide_banner", "-nostats", "-i", str(voice)]
     if music is not None:
         cmd += ["-stream_loop", "-1", "-i", str(music)]
-    graph = audio_graph(0, 1 if music is not None else None, duration, polish, measure=True)
+    graph = audio_graph(0, 1 if music is not None else None, duration, polish, gain_db, measure=True)
     return cmd + ["-filter_complex", graph, "-map", "[a]", "-f", "null", "-"]
 
 
 def parse_loudnorm_json(stderr: str) -> Optional[dict]:
-    """The JSON block loudnorm prints, or None if the audio was silent or unreadable."""
-    start = stderr.rfind("{")
-    end = stderr.rfind("}")
+    """Integrated loudness and true peak from loudnorm's JSON, or None if silent or unreadable."""
+    start, end = stderr.rfind("{"), stderr.rfind("}")
     if start < 0 or end < start:
         return None
     try:
         data = json.loads(stderr[start : end + 1])
-        keys = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
-        values = {k: float(data[k]) for k in keys}
+        lufs, peak = float(data["input_i"]), float(data["input_tp"])
     except (ValueError, KeyError, TypeError):
         return None
-    if not all(v == v and abs(v) != float("inf") for v in values.values()) or values["input_i"] < -70:
+    if lufs != lufs or lufs in (float("inf"), float("-inf")) or lufs < -70:
         return None   # silence: nothing to normalize
-    return {k: data[k] for k in keys}
+    return {"lufs": lufs, "true_peak": peak}
 
 
-def measure_loudness(
-    voice: Path,
-    exe: str = "ffmpeg",
-    music: Optional[Path] = None,
-    duration: Optional[float] = None,
-    polish: bool = True,
-) -> Optional[dict]:
-    proc = subprocess.run(measure_loudness_command(voice, exe, music, duration, polish),
+def measure_loudness(voice: Path, exe: str = "ffmpeg", music: Optional[Path] = None,
+                     duration: Optional[float] = None, polish: bool = True,
+                     gain_db: Optional[float] = None) -> Optional[dict]:
+    proc = subprocess.run(measure_loudness_command(voice, exe, music, duration, polish, gain_db),
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise FFmpegError(f"ffmpeg failed ({proc.returncode}): {proc.stderr.strip()[-2000:]}")
     return parse_loudnorm_json(proc.stderr)
+
+
+def loudness_gain(voice: Path, exe: str = "ffmpeg", music: Optional[Path] = None,
+                  duration: Optional[float] = None, polish: bool = True,
+                  measure=measure_loudness) -> Optional[Tuple[float, float, dict]]:
+    """Gain that brings the mix to LOUDNESS_LUFS once the limiter is in.
+
+    Measures the mix and applies the difference, then measures again with
+    the gain and the limiter and corrects for what the limiter took off, up
+    to LOUDNESS_PASSES times. Returns
+    ``(gain_db, loudness before, final measurement)``, or None for silence.
+    """
+    before = measure(voice, exe, music, duration, polish, None)
+    if before is None:
+        return None
+    gain, after = LOUDNESS_LUFS - before["lufs"], None
+    for _ in range(LOUDNESS_PASSES):
+        after = measure(voice, exe, music, duration, polish, gain)
+        if after is None or abs(LOUDNESS_LUFS - after["lufs"]) < LOUDNESS_TOLERANCE:
+            break
+        gain += LOUDNESS_LUFS - after["lufs"]
+    return gain, before["lufs"], after or before
 
 
 def final_command(
@@ -382,7 +398,7 @@ def final_command(
     music: Optional[Path] = None,
     duration: Optional[float] = None,
     polish: bool = False,
-    loudness: Optional[dict] = None,
+    gain_db: Optional[float] = None,
 ) -> List[str]:
     """Add the voiceover, and optionally captions and background music.
 
@@ -391,7 +407,7 @@ def final_command(
     is copied). Music is looped if needed, lowered by
     MUSIC_GAIN_DB, cut to ``duration`` (the video length) and faded out over
     the last MUSIC_FADE_SECONDS, then mixed under the voice. ``polish`` and
-    ``loudness`` are passed to :func:`audio_graph`.
+    ``gain_db`` are passed to :func:`audio_graph`.
     """
     cmd = [exe, "-y", "-hide_banner", "-loglevel", "error", "-i", str(video), "-i", str(voice)]
     graph: List[str] = []
@@ -412,7 +428,7 @@ def final_command(
         cmd += ["-stream_loop", "-1", "-i", str(music)]
         music_in = next_input
         next_input += 1
-    audio = audio_graph(1, music_in, duration, polish, loudness)
+    audio = audio_graph(1, music_in, duration, polish, gain_db)
     if audio is not None:
         graph.append(audio)
         audio_map = "[a]"

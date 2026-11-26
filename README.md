@@ -183,10 +183,13 @@ leaves it as it is):
 - The voice is compressed gently (2.5:1 above -21 dB, 15 ms attack, 200 ms
   release), then a light de-esser softens harsh "s" sounds. Music, if any, is
   mixed in after this.
-- The final mix is normalized to -14 LUFS integrated, true peak -1 dBTP, the
-  usual level for TikTok, Reels and Shorts. ffmpeg's `loudnorm` runs twice:
-  a first pass measures the mix, the second applies one fixed gain, so the
-  voice isn't pumped up and down.
+- The final mix is brought to -14 LUFS integrated with a true peak under
+  -1 dBTP, the usual level for TikTok, Reels and Shorts. wkvideo measures
+  the mix, applies one fixed gain and puts a peak limiter after it (run at
+  192 kHz so peaks between samples are caught, set 0.3 dB under -1 dBTP to
+  leave room for the AAC encoder). It measures again and corrects the gain
+  until the result is within 0.1 LU of -14, so the voice keeps its natural
+  dynamics instead of being pumped up and down.
 
 ## Video ideas
 
