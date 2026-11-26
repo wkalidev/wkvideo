@@ -1,4 +1,4 @@
-"""Command-line entry point: ``wkvideo FOLDER [-o out.mp4]`` and ``wkvideo ideas``."""
+"""Command-line entry point: ``wkvideo FOLDER [-o out.mp4]`` and the ideas / assets steps."""
 
 from __future__ import annotations
 
@@ -20,8 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="wkvideo",
         description="Build a 1080x1920 MP4 from a folder of images, an MP3 voiceover and scenes.json.",
-        epilog="To collect Stay Safe video topics instead, run: wkvideo ideas --help "
-               "(a video folder named 'ideas' can be passed as ./ideas).",
+        epilog="Other steps: wkvideo ideas (video topics), wkvideo assets (stock photos and videos). "
+               ""
+               "Run any of them with --help. A video folder with one of those names can be passed as ./NAME.",
     )
     p.add_argument("folder", type=Path, help="input folder containing images, the MP3 and scenes.json")
     p.add_argument("-o", "--output", type=Path, help="output MP4 (default: FOLDER/output.mp4)")
@@ -47,6 +48,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         from .ideas.cli import main as ideas_main
 
         return ideas_main(argv[1:])
+    if argv[:1] == ["assets"]:
+        from .stock import main as assets_main
+
+        return assets_main(argv[1:])
     args = build_parser().parse_args(argv)
     folder: Path = args.folder
     if not folder.is_dir():
