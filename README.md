@@ -166,6 +166,62 @@ run past that point, they are left as they are and the end plays silently.
 turned down by 22 dB, looped if it's shorter than the video, cut to the video's
 length and faded out over the last second. The voice level is not changed.
 
+## Video ideas
+
+```bash
+wkvideo ideas                    # writes ~/wk-content/ideas/YYYY-MM-DD.md
+```
+
+`wkvideo ideas` collects fresh topics for short "Stay Safe" videos from public
+feeds and writes the top 10 from the last 7 days to a Markdown file. Each idea
+has:
+
+- a hook: casual, talks to the viewer, never first person, under 70 characters
+- why it matters: the source's own lead sentence, quoted
+- what to do: a sentence of advice from the source, quoted (from the feed, or
+  from the article page when the feed only has a teaser)
+- the region it applies to: only what the source names. With no place named,
+  it says worldwide, or "probably worldwide, check" for a source that mostly
+  covers one country
+- the source link and its date, plus other sources that covered the same story
+
+Topics are ranked for a worldwide audience: scams and account security first,
+then crypto hacks with a lesson for everyday users, then useful AI tools.
+Stories that name one country rank lower. Business news, roundups, flaws in
+servers, libraries or network appliances, and protocol-level DeFi bugs are
+skipped. So is anything whose source gives no "what to do" for viewers; those
+are listed at the end for a manual look. Nothing is invented: the hook is a
+fixed template for the topic, the rest is quoted, and wording such as
+"reportedly" or "suspected" is flagged as uncertain. If fewer than 10 items
+qualify, the list is shorter.
+
+The sources live in `~/wk-content/ideas/feeds.txt`, created on the first run
+from the built-in list. Edit it to add or remove feeds:
+
+```
+# name | kind | url [| home=REGION]
+BleepingComputer | rss | https://www.bleepingcomputer.com/feed/
+Fraud.org | rss | https://fraud.org/feed/ | home=US
+DefiLlama hacks | defillama-hacks | https://api.llama.fi/hacks
+```
+
+The built-in list has BleepingComputer, The Hacker News, rekt.news, Fraud.org,
+FTC consumer alerts, Google's safety and security blog (where its fraud and
+scams advisories are posted) and the DefiLlama hacks list. A source that fails
+is reported in the file and the others are still used. The FTC answers 403 to
+automated requests from some networks.
+
+| Option | Description |
+| --- | --- |
+| `--days N` | Keep items from the last N days. Default: 7 |
+| `--top N` | Number of ideas to write. Default: 10 |
+| `--feeds PATH` | Feed list to use instead of `OUT_DIR/feeds.txt` |
+| `--out-dir DIR` | Where to write. Default: `~/wk-content/ideas` |
+| `--date YYYY-MM-DD` | Treat this day as today |
+| `--max-articles N` | Article pages to read for advice. Default: 25, `0` for none |
+
+To render a video folder that is itself named `ideas`, pass it as `./ideas`.
+
 ## Development
 
 ```bash
