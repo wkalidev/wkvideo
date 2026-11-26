@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	>
+<channel>
+	<title>Fraud.org (sample)</title>
+	<link>https://fraud.org</link>
+	<description>Sample feed for wkvideo tests. Fictional items in the site's real feed format.</description>
+	<item>
+		<title>Watch Out for Fake Delivery Texts This Holiday Season</title>
+		<link>https://fraud.org/sample-fake-delivery-texts/</link>
+		<dc:creator><![CDATA[Sample Author]]></dc:creator>
+		<pubDate>Fri, 20 Nov 2026 15:47:18 +0000</pubDate>
+		<category><![CDATA[Scam Alerts]]></category>
+		<guid isPermaLink="false">https://fraud.org/?p=00000</guid>
+		<description><![CDATA[Scammers are sending fake USPS delivery texts that claim a package is on hold until a small redelivery fee is paid.]]></description>
+		<content:encoded><![CDATA[<p>Scammers are sending fake USPS delivery texts that claim a package is on hold until a small redelivery fee is paid.</p>
+<p>The link leads to a page that collects card details.</p>
+<p>Don&#8217;t click on links in unsolicited texts. Check the status of a package directly on the carrier&#8217;s website.</p>]]></content:encoded>
+	</item>
+</channel>
+</rss>

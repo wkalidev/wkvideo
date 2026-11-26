@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Rekt (sample)</title>
+    <link>https://rekt.news</link>
+    <description>Sample feed for wkvideo tests. Fictional items in the site's real feed format.</description>
+    <item>
+      <title>Wallet Drainer Hits Users Through Fake Airdrop Site</title>
+      <link>https://rekt.news/sample-airdrop-drainer</link>
+      <guid>https://rekt.news/sample-airdrop-drainer</guid>
+      <pubDate>Sun, 22 Nov 2026 00:00:00 GMT</pubDate>
+      <description>A fake airdrop site asked visitors to connect their wallets and sign a transaction, then drained their tokens.</description>
+      <content:encoded><![CDATA[<p>A fake airdrop site asked visitors to connect their wallets and sign a transaction, then drained their tokens.</p><p>The site copied the look of a real project and was promoted through hijacked social media accounts.</p><p>Never sign a transaction you don't understand, and revoke old token approvals you no longer use.</p>]]></content:encoded>
+      <enclosure url="https://example.invalid/rekt.png" type="image/png" length="0"/>
+    </item>
+    <item>
+      <title>Transparent When You Want It, Private When You Need It</title>
+      <link>https://rekt.news/sample-privacy</link>
+      <guid>https://rekt.news/sample-privacy</guid>
+      <pubDate>Thu, 09 Apr 2026 00:00:00 GMT</pubDate>
+      <description>Public blockchains solved settlement. They didn't solve privacy.</description>
+      <content:encoded><![CDATA[<p>Public blockchains solved settlement. They didn't solve privacy.</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Google safety and security (sample, Atom)</title>
+  <id>https://blog.google/technology/safety-security/</id>
+  <updated>2026-11-21T14:00:00Z</updated>
+  <entry>
+    <title>Fraud and scams advisory: November 2026</title>
+    <link rel="alternate" href="https://blog.google/technology/safety-security/fraud-and-scams-advisory-november-2026/"/>
+    <id>tag:blog.google,2026:advisory-nov</id>
+    <published>2026-11-19T14:00:00Z</published>
+    <summary type="html">&lt;img src="https://example.invalid/a.webp"&gt;Scammers are using AI-generated voices to impersonate family members who say they are in trouble and need money urgently.</summary>
+    <content type="html">&lt;p&gt;Scammers are using AI-generated voices to impersonate family members who say they are in trouble and need money urgently.&lt;/p&gt;&lt;p&gt;To protect yourself, set up a family code word that only relatives know, and hang up and call back on a number you already have.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>New Gemini feature helps spot scam messages</title>
+    <link href="https://blog.google/technology/safety-security/gemini-scam-detection/"/>
+    <id>tag:blog.google,2026:gemini-scam</id>
+    <updated>2026-11-21T14:00:00.123456789Z</updated>
+    <summary>A new Gemini feature on Android can flag text messages that look like scams before you reply.</summary>
+    <content type="html">&lt;p&gt;A new Gemini feature on Android can flag text messages that look like scams before you reply.&lt;/p&gt;&lt;p&gt;To turn it on, open Messages settings and enable Scam Detection.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>Google Cloud announces record quarterly revenue</title>
+    <link href="https://blog.google/sample-cloud-revenue/"/>
+    <id>tag:blog.google,2026:revenue</id>
+    <published>2026-11-20T14:00:00Z</published>
+    <summary>Google Cloud reported record quarterly revenue driven by demand for AI infrastructure.</summary>
+  </entry>
+</feed>

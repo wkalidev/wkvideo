@@ -18,10 +18,11 @@ test = ["pytest>=7"]
 wkvideo = "wkvideo.cli:main"
 
 [tool.setuptools]
-packages = ["wkvideo"]
+packages = ["wkvideo", "wkvideo.ideas"]
 
 [tool.setuptools.package-data]
 wkvideo = ["fonts/*.ttf", "fonts/*.txt"]
+"wkvideo.ideas" = ["feeds.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

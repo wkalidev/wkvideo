@@ -1,0 +1,18 @@
+# Sources for `wkvideo ideas`. Edit freely: add, remove or comment out lines.
+#
+# One source per line:   name | kind | url [| home=REGION]
+#   kind:  rss               an RSS 2.0 or Atom feed
+#          defillama-hacks   the DefiLlama hacks list (JSON)
+#   home:  optional. The country or region the source mostly covers. Items
+#          that name no region are then reported as "probably worldwide" with
+#          a note to check, instead of plain "worldwide".
+#
+# Only public feeds and pages. Lines starting with # are ignored.
+
+BleepingComputer | rss | https://www.bleepingcomputer.com/feed/
+The Hacker News | rss | https://feeds.feedburner.com/TheHackersNews
+rekt.news | rss | https://rekt.news/rss/feed.xml
+Fraud.org | rss | https://fraud.org/feed/ | home=US
+FTC consumer alerts | rss | https://consumer.ftc.gov/consumer-alerts/feed | home=US
+Google fraud and scams advisory | rss | https://blog.google/technology/safety-security/rss/
+DefiLlama hacks | defillama-hacks | https://api.llama.fi/hacks

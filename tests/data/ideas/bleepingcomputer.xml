@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+        xmlns:content="http://purl.org/rss/1.0/modules/content/"
+        xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+  <title>BleepingComputer (sample)</title>
+  <link>https://www.bleepingcomputer.com/</link>
+  <description>Sample feed for wkvideo tests. Fictional items in the site's real feed format.</description>
+  <item>
+    <title>Chrome emergency update fixes zero-day exploited in attacks</title>
+    <link>https://www.bleepingcomputer.com/news/security/chrome-emergency-update-fixes-zero-day/</link>
+    <pubDate>Tue, 24 Nov 2026 10:15:00 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/chrome-emergency-update-fixes-zero-day/</guid>
+    <description><![CDATA[Google has released an emergency Chrome update to fix a zero-day vulnerability that is being exploited in attacks. Users are advised to update Chrome to version 150.0.7800.45 as soon as possible.]]></description>
+  </item>
+  <item>
+    <title>Acme Security acquires CloudGuard in $2 billion deal</title>
+    <link>https://www.bleepingcomputer.com/news/security/acme-acquires-cloudguard/</link>
+    <pubDate>Wed, 25 Nov 2026 09:00:00 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/acme-acquires-cloudguard/</guid>
+    <description><![CDATA[Acme Security announced it will acquire cloud security startup CloudGuard in a deal valued at $2 billion, expected to close next quarter.]]></description>
+  </item>
+  <item>
+    <title>CISA warns of critical flaw in industrial refrigeration controllers</title>
+    <link>https://www.bleepingcomputer.com/news/security/cisa-warns-refrigeration-controllers/</link>
+    <pubDate>Wed, 25 Nov 2026 11:13:40 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/cisa-warns-refrigeration-controllers/</guid>
+    <description><![CDATA[The U.S. Cybersecurity and Infrastructure Security Agency (CISA) is warning about a critical vulnerability in industrial controllers used by food retailers. Administrators should apply the vendor's patch.]]></description>
+  </item>
+  <item>
+    <title>Ransomware gang claims attack on regional hospital network</title>
+    <link>https://www.bleepingcomputer.com/news/security/ransomware-gang-claims-hospital-attack/</link>
+    <pubDate>Mon, 23 Nov 2026 14:00:00 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/ransomware-gang-claims-hospital-attack/</guid>
+    <description><![CDATA[A ransomware gang has claimed responsibility for an attack on a regional hospital network, listing the organization on its data leak site.]]></description>
+  </item>
+  <item>
+    <title>Fake toll payment texts spread in new phishing wave</title>
+    <link>https://www.bleepingcomputer.com/news/security/fake-toll-payment-texts/</link>
+    <pubDate>Wed, 25 Nov 2026 16:33:33 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/fake-toll-payment-texts/</guid>
+    <description><![CDATA[A new SMS phishing campaign impersonates toll road operators, telling recipients they owe a small unpaid fee and linking to a fake payment page.]]></description>
+  </item>
+  <item>
+    <title>Old phishing campaign targets streaming subscribers</title>
+    <link>https://www.bleepingcomputer.com/news/security/old-streaming-phishing/</link>
+    <pubDate>Tue, 10 Nov 2026 08:00:00 -0500</pubDate>
+    <dc:creator>Sample Author</dc:creator>
+    <category><![CDATA[Security]]></category>
+    <guid>https://www.bleepingcomputer.com/news/security/old-streaming-phishing/</guid>
+    <description><![CDATA[A phishing campaign is targeting streaming subscribers with fake billing emails. Users should never enter card details from a link in an email.]]></description>
+  </item>
+</channel>
+</rss>
