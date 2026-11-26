@@ -243,14 +243,35 @@ def _draw_logo(draw, font_path: str) -> None:
     )
 
 
+def image_size(src: Tuple[int, int], max_bottom: Optional[float] = None) -> Tuple[int, int]:
+    """Size of the foreground image: 96% of the width, top edge at 30% height.
+
+    Its bottom edge stays above ``HEIGHT - BOTTOM_MARGIN``, or above
+    ``max_bottom`` if that is higher (used to leave room for captions).
+    """
+    bottom = HEIGHT - BOTTOM_MARGIN
+    if max_bottom is not None:
+        bottom = min(bottom, int(max_bottom))
+    return fit_box(src, round(WIDTH * IMAGE_WIDTH_RATIO), max(1, bottom - IMAGE_TOP))
+
+
+def image_bottom(image_path, max_bottom: Optional[float] = None) -> int:
+    """Y of the foreground image's bottom edge in the (unzoomed) frame."""
+    with Image.open(image_path) as src:
+        size = ImageOps.exif_transpose(src).size
+    return IMAGE_TOP + image_size(size, max_bottom)[1]
+
+
 def render_frame(
-    image_path, top_text: str, accent_text: str, font_path, draw_top: bool = True, draw_logo: bool = True
+    image_path, top_text: str, accent_text: str, font_path, draw_top: bool = True, draw_logo: bool = True,
+    image_max_bottom: Optional[float] = None,
 ) -> Image.Image:
     """Compose one 1080x1920 RGB frame for a scene.
 
     ``draw_top=False`` / ``draw_logo=False`` leave the headline or logo out so
     they can be layered separately (see :func:`render_top_layer` and
-    :func:`render_logo_layer`).
+    :func:`render_logo_layer`). ``image_max_bottom`` limits how low the
+    foreground image may reach (see :func:`image_size`).
     """
     font_path = str(font_path)
     with Image.open(image_path) as src:
@@ -261,7 +282,7 @@ def render_frame(
         frame = ImageEnhance.Brightness(bg).enhance(BACKGROUND_BRIGHTNESS)
 
         # Foreground: 96% width, top edge at 30% height.
-        fw, fh = fit_box(src.size, round(WIDTH * IMAGE_WIDTH_RATIO), HEIGHT - IMAGE_TOP - BOTTOM_MARGIN)
+        fw, fh = image_size(src.size, image_max_bottom)
         fg = src.resize((fw, fh), Image.LANCZOS)
         frame.paste(fg, ((WIDTH - fw) // 2, IMAGE_TOP))
 

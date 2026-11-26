@@ -7,16 +7,19 @@ then overlaid on the finished video.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw
 
 from .render import BLACK, HEIGHT, LIME, WHITE, WIDTH, load_font
 from .transcribe import Word
 
-CAPTION_CENTER_RATIO = 0.70
+CAPTION_CENTER_RATIO = 0.82  # default centre: the band under the image
+IMAGE_GAP = 40               # min space between the image's bottom edge and the caption text
+CAPTION_BOTTOM_MARGIN = 60   # min space between the caption text and the bottom of the frame
 CAPTION_SIZE = 76
 CAPTION_MIN_SIZE = 56
 CAPTION_STROKE = 6
@@ -29,9 +32,42 @@ HOLD_AFTER = 0.4    # keep the last group on screen this long after its last wor
 TRAILING_PUNCTUATION = ",.;:"
 
 
-def caption_y() -> int:
-    """Top edge of the caption strip, so its centre sits at 70% height."""
-    return round(HEIGHT * CAPTION_CENTER_RATIO) - STRIP_HEIGHT // 2
+INK_SAMPLE = "Hbdfhkltgjpqy"  # ascenders and descenders, to measure the text's height
+
+
+def caption_y(center: Optional[int] = None) -> int:
+    """Top edge of the caption strip for a given centre (default: 82% height)."""
+    if center is None:
+        center = round(HEIGHT * CAPTION_CENTER_RATIO)
+    return center - STRIP_HEIGHT // 2
+
+
+def ink_extent(font_path) -> Tuple[int, int]:
+    """How far caption text reaches above and below the strip's centre line."""
+    font = load_font(str(font_path), CAPTION_SIZE)
+    _, top, _, bottom = font.getbbox(INK_SAMPLE, anchor="lm", stroke_width=CAPTION_STROKE)
+    return -top, bottom
+
+
+def _lowest_center(font_path) -> int:
+    _, below = ink_extent(font_path)
+    return min(HEIGHT - CAPTION_BOTTOM_MARGIN - below, HEIGHT - STRIP_HEIGHT // 2)
+
+
+def max_image_bottom(font_path) -> int:
+    """Lowest an image may reach while captions still fit IMAGE_GAP below it."""
+    above, _ = ink_extent(font_path)
+    return _lowest_center(font_path) - above - IMAGE_GAP
+
+
+def caption_center(image_bottom: float, font_path) -> int:
+    """Caption centre for a scene whose image ends at ``image_bottom``.
+
+    82% height, or lower if needed to keep the text IMAGE_GAP below the image.
+    """
+    above, _ = ink_extent(font_path)
+    wanted = max(round(HEIGHT * CAPTION_CENTER_RATIO), math.ceil(image_bottom + IMAGE_GAP + above))
+    return min(wanted, _lowest_center(font_path))
 
 
 def clean(words: Sequence[Word]) -> List[Word]:

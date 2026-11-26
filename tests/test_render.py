@@ -155,3 +155,12 @@ def test_accent_never_larger_than_headline(font):
     top = text_of_width(font, TOP_SIZE, MAX_W * 1.2)  # forces the headline to shrink
     top_size, accent_size, *_ = _layout_block(top, "short", str(font), MAX_W, BAND_H)
     assert accent_size <= top_size
+
+
+def test_image_max_bottom_shrinks_tall_images(project):
+    from wkvideo.render import IMAGE_TOP, image_bottom, image_size
+
+    assert image_bottom(project / "tall.png") == HEIGHT - 60  # default limit
+    assert image_bottom(project / "tall.png", 1700) == 1700
+    assert image_bottom(project / "wide.jpg", 1700) == image_bottom(project / "wide.jpg")
+    assert image_size((800, 1400), 1700)[1] == 1700 - IMAGE_TOP

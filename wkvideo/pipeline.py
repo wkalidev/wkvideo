@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
 from . import ffmpeg
-from .captions import caption_y, write_caption_track
-from .hook import write_pop_frames
-from .render import render_frame, render_logo_layer
+from .captions import caption_center, caption_y, max_image_bottom, write_caption_track
+from .hook import FAST_ZOOM_AMOUNT, write_pop_frames
+from .render import HEIGHT, image_bottom, render_frame, render_logo_layer
 from .scenes import Scene
 from .transcribe import DEFAULT_MODEL, Word, load_or_transcribe
 
@@ -38,6 +38,21 @@ def extend_to_audio(scenes: Sequence[Scene], audio_seconds: float, tail: float =
         return 0.0
     scenes[-1].duration += extra
     return extra
+
+
+def max_zoom(hook: bool) -> float:
+    """Largest zoom a scene reaches (the hook scene zooms further)."""
+    return ffmpeg.ZOOM_END + (FAST_ZOOM_AMOUNT if hook else 0.0)
+
+
+def zoomed_y(y: float, zoom: float) -> float:
+    """Where row ``y`` of a frame lands at ``zoom`` (zoompan zooms about the centre)."""
+    return HEIGHT / 2 + (y - HEIGHT / 2) * zoom
+
+
+def unzoomed_y(y: float, zoom: float) -> float:
+    """The frame row that lands on ``y`` at ``zoom``."""
+    return HEIGHT / 2 + (y - HEIGHT / 2) / zoom
 
 
 def build_video(
@@ -78,21 +93,33 @@ def build_video(
 
     try:
         clips: List[Path] = []
+        caption_tops: List[int] = []
         for i, scene in enumerate(scenes, start=1):
             log(f"[{i}/{len(scenes)}] {scene.image.name} ({scene.duration:.2f}s)")
             frame_png = work / f"scene_{i:03d}.png"
             clip = work / f"scene_{i:03d}.mp4"
+            # With captions, keep the image high enough (even fully zoomed in)
+            # for the captions to fit below it, and place them under it.
+            limit = None
+            if captions:
+                zoom = max_zoom(hook=i == 1)
+                limit = unzoomed_y(max_image_bottom(font), zoom)
+                bottom = zoomed_y(image_bottom(scene.image, limit), zoom)
+                caption_tops.append(caption_y(caption_center(bottom, font)))
             if i == 1:
                 # Hook punch: headline pops in, background zooms in fast.
                 render_frame(
-                    scene.image, scene.top_text, scene.accent_text, font, draw_top=False, draw_logo=False
+                    scene.image, scene.top_text, scene.accent_text, font, draw_top=False, draw_logo=False,
+                    image_max_bottom=limit,
                 ).save(frame_png)
                 pop = write_pop_frames(scene.top_text, scene.accent_text, font, work / "pop", fps)
                 logo = work / "logo.png"
                 render_logo_layer(font).save(logo)
                 ffmpeg.run(ffmpeg.hook_scene_command(frame_png, pop, logo, scene.duration, clip, fps, exe))
             else:
-                render_frame(scene.image, scene.top_text, scene.accent_text, font).save(frame_png)
+                render_frame(
+                    scene.image, scene.top_text, scene.accent_text, font, image_max_bottom=limit
+                ).save(frame_png)
                 ffmpeg.run(ffmpeg.scene_command(frame_png, scene.duration, clip, fps, exe))
             clips.append(clip)
 
@@ -101,14 +128,17 @@ def build_video(
         silent = work / "video_silent.mp4"
         ffmpeg.run(ffmpeg.concat_command(list_file, silent, exe))
 
-        video_seconds = sum(ffmpeg.frame_count(s.duration, fps) for s in scenes) / fps
-        track = None
+        frames = [ffmpeg.frame_count(s.duration, fps) for s in scenes]
+        video_seconds = sum(frames) / fps
+        track, overlay_y = None, 0
         if captions:
             log(f"Rendering captions ({len(words)} words)")
             track = write_caption_track(words, font, work / "captions", video_seconds)
+            starts = [sum(frames[:k]) / fps for k in range(1, len(frames))]
+            overlay_y = ffmpeg.overlay_y_expr(caption_tops, starts, fps)
         log(f"Muxing audio {Path(audio).name}" + (f" with music {Path(music).name}" if music else ""))
         ffmpeg.run(ffmpeg.final_command(
-            silent, Path(audio), output, track, caption_y(), fps, exe, music=music, duration=video_seconds,
+            silent, Path(audio), output, track, overlay_y, fps, exe, music=music, duration=video_seconds,
         ))
     finally:
         if not keep:

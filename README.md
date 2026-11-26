@@ -109,9 +109,16 @@ alone on the last line. The accent line is never larger than the headline.
 
 By default, wkvideo transcribes the voiceover with
 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) to get the timing
-of each word, then shows the words 2 to 4 at a time. Captions are centred at
-70% of the height, in Inter Bold, white with a black stroke, and the word
-being spoken is highlighted in lime.
+of each word, then shows the words 2 to 4 at a time. Captions are set in Inter
+Bold, white with a black stroke, and the word being spoken is highlighted in
+lime.
+
+Captions sit in the band under the image, centred at 82% of the height. If a
+scene's image reaches that low, its captions move down to stay at least 40px
+below the image's bottom edge, measured at the scene's full zoom. To leave room
+for that, tall images are kept a little shorter when captions are on (their
+bottom edge stays above about 1700px). With `--captions off`, images keep their
+full size.
 
 Transcription runs locally on the CPU, with no cloud API. The first run
 downloads the Whisper model (about 480 MB for `small`) from Hugging Face and

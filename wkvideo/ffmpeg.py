@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Union
 
 OUT_SIZE = (1080, 1920)
 UPSCALE_SIZE = (2160, 3840)
@@ -158,6 +158,24 @@ def concat_command(list_file: Path, out: Path, exe: str = "ffmpeg") -> List[str]
     ]
 
 
+def overlay_y_expr(tops: Sequence[int], starts: Sequence[float], fps: int = DEFAULT_FPS) -> Union[int, str]:
+    """Overlay ``y`` that switches to ``tops[i]`` when scene ``i`` starts.
+
+    ``starts`` are the start times of scenes 1..n-1 (scene 0 starts at 0).
+    Each switch happens half a frame early so the first frame of a scene gets
+    its position despite timestamp rounding. Returns a plain int if all
+    positions are equal.
+    """
+    if len(starts) != len(tops) - 1:
+        raise ValueError("need one start time per scene after the first")
+    if len(set(tops)) == 1:
+        return tops[0]
+    expr = str(tops[-1])
+    for top, start in zip(reversed(tops[:-1]), reversed(list(starts))):
+        expr = f"if(lt(t,{start - 0.5 / fps:.4f}),{top},{expr})"
+    return expr
+
+
 MUSIC_GAIN_DB = -22
 MUSIC_FADE_SECONDS = 1.0
 
@@ -167,7 +185,7 @@ def final_command(
     voice: Path,
     out: Path,
     captions: Optional[Path] = None,
-    caption_y: int = 0,
+    caption_y: Union[int, str] = 0,
     fps: int = DEFAULT_FPS,
     exe: str = "ffmpeg",
     music: Optional[Path] = None,
@@ -175,8 +193,9 @@ def final_command(
 ) -> List[str]:
     """Add the voiceover, and optionally captions and background music.
 
-    Captions are overlaid at ``caption_y`` (the video is then re-encoded;
-    otherwise it is copied). Music is looped if needed, lowered by
+    Captions are overlaid at ``caption_y``, a pixel row or a time expression
+    from :func:`overlay_y_expr` (the video is then re-encoded; otherwise it
+    is copied). Music is looped if needed, lowered by
     MUSIC_GAIN_DB, cut to ``duration`` (the video length) and faded out over
     the last MUSIC_FADE_SECONDS, then mixed under the voice.
     """
@@ -187,7 +206,8 @@ def final_command(
 
     if captions is not None:
         cmd += ["-f", "concat", "-safe", "0", "-i", str(captions)]
-        graph.append(f"[0:v][{next_input}:v]overlay=0:{caption_y}:eof_action=pass:format=auto,format=yuv420p[v]")
+        y = caption_y if isinstance(caption_y, int) else f"'{caption_y}'"
+        graph.append(f"[0:v][{next_input}:v]overlay=0:{y}:eof_action=pass:format=auto,format=yuv420p[v]")
         video_map = "[v]"
         next_input += 1
 

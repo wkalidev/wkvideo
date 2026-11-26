@@ -47,6 +47,21 @@ def test_final_command_overlays_captions():
     assert cmd[cmd.index("-c:v") + 1] == "libx264"
 
 
+def test_overlay_y_expr_switches_per_scene():
+    assert ffmpeg.overlay_y_expr([1474, 1474], [2.0]) == 1474
+    expr = ffmpeg.overlay_y_expr([1474, 1600, 1474], [2.0, 5.0], fps=30)
+    assert expr == "if(lt(t,1.9833),1474,if(lt(t,4.9833),1600,1474))"
+    with pytest.raises(ValueError):
+        ffmpeg.overlay_y_expr([1, 2], [])
+
+
+def test_final_command_quotes_overlay_expression():
+    cmd = ffmpeg.final_command(Path("v.mp4"), Path("a.mp3"), Path("out.mp4"), Path("c.ffconcat"),
+                               "if(lt(t,1),10,20)")
+    graph = cmd[cmd.index("-filter_complex") + 1]
+    assert "overlay=0:'if(lt(t,1),10,20)':" in graph
+
+
 def test_concat_list_escapes_quotes(tmp_path):
     text = ffmpeg.concat_list([tmp_path / "it's.mp4"])
     assert text.startswith("file '") and r"'\''" in text

@@ -6,8 +6,8 @@ import pytest
 from PIL import Image
 
 from wkvideo.captions import (
-    CAPTION_CENTER_RATIO, STRIP_HEIGHT, caption_y, clean, group_words, render_caption, timeline,
-    write_caption_track,
+    CAPTION_BOTTOM_MARGIN, CAPTION_CENTER_RATIO, IMAGE_GAP, STRIP_HEIGHT, caption_center, caption_y, clean,
+    group_words, ink_extent, max_image_bottom, render_caption, timeline, write_caption_track,
 )
 from wkvideo.render import HEIGHT, LIME, WIDTH
 from wkvideo.transcribe import Word, cache_path, load_or_transcribe
@@ -119,8 +119,29 @@ def test_render_caption_highlight(font):
     assert render_caption([], 0, font).getbbox() is None
 
 
-def test_caption_centre_at_70_percent():
+def test_caption_centre_at_82_percent():
+    assert CAPTION_CENTER_RATIO == 0.82
     assert caption_y() + STRIP_HEIGHT / 2 == pytest.approx(HEIGHT * CAPTION_CENTER_RATIO, abs=1)
+
+
+def test_caption_stays_at_82_percent_under_a_short_image(font):
+    assert caption_center(1267, font) == round(HEIGHT * 0.82)
+
+
+def test_caption_moves_down_to_clear_a_low_image(font):
+    above, _ = ink_extent(font)
+    centre = caption_center(1600, font)
+    assert centre > round(HEIGHT * 0.82)
+    assert centre - above - 1600 == pytest.approx(IMAGE_GAP, abs=1)
+
+
+def test_image_limit_keeps_the_gap_and_the_bottom_margin(font):
+    above, below = ink_extent(font)
+    limit = max_image_bottom(font)
+    centre = caption_center(limit, font)
+    assert centre - above - limit >= IMAGE_GAP
+    assert centre + below <= HEIGHT - CAPTION_BOTTOM_MARGIN
+    assert caption_y(centre) + STRIP_HEIGHT <= HEIGHT
 
 
 def test_write_caption_track(tmp_path, font):
