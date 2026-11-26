@@ -147,8 +147,8 @@ def phone(inter: Inter, x: float, y: float, h: float) -> str:
     p.append(f'<rect x="22" y="576" width="1036" height="760" rx="24" fill="#2A2F3A"/>')
     p.append(f'<path d="M22 1180 L300 900 L520 1110 L720 950 L1058 1260 L1058 1312 Q1058 1336 1034 1336 L46 1336 Q22 1336 22 1312 Z" fill="#363C49"/>')
     p.append(f'<circle cx="820" cy="760" r="70" fill="#3E4553"/>')
-    # word captions at 70%: one highlighted word
-    cy = 1344 - 34
+    # word captions at 82%, in the band under the image: one highlighted word
+    cy = round(1920 * 0.82) - 34
     for cx, cw, col in ((170, 230, WHITE), (430, 300, LIME), (760, 150, WHITE)):
         p.append(f'<rect x="{cx}" y="{cy}" width="{cw}" height="68" rx="34" fill="{col}"/>')
     # progress bar
