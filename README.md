@@ -93,12 +93,20 @@ another font, pass `--font` or set the `WKVIDEO_FONT` environment variable.
 ]
 ```
 
-- `image` (required): path relative to `scenes.json`
+- `image` or `video` (one is required): path relative to `scenes.json`
+- `image_query` / `video_query`: a stock search for `wkvideo assets` to fill
+  `image` or `video` (see [Stock photos and videos](#stock-photos-and-videos))
 - `duration`: seconds. Optional when `--durations` is given.
 - `top` / `top_text`: white headline. Optional.
 - `accent` / `accent_text`: lime line under the headline. Optional.
 
 You can also wrap the list as `{"scenes": [...]}`.
+
+A `video` scene (MP4, MOV, M4V or WebM) uses the same layout as an image:
+the clip fitted at 30% height over a blurred, darkened copy of itself, with
+the headline above. It isn't zoomed, since the footage already moves, and it
+loops if it is shorter than the scene. Its own sound is dropped. As the first
+scene, its headline still pops in.
 
 Text is fitted automatically. The headline starts at 84px and the accent line at
 67px. Each one shrinks, down to 60px, to stay on a single line. Only text that
@@ -220,7 +228,80 @@ automated requests from some networks.
 | `--date YYYY-MM-DD` | Treat this day as today |
 | `--max-articles N` | Article pages to read for advice. Default: 25, `0` for none |
 
-To render a video folder that is itself named `ideas`, pass it as `./ideas`.
+To render a video folder that is itself named `ideas`, `assets`, `voice` or `post`, pass it as
+`./ideas` (and so on).
+
+## Stock photos and videos
+
+```bash
+wkvideo assets my-video          # fills image / video from image_query / video_query
+```
+
+For each scene with an `image_query` or `video_query` and no file yet, the
+first suitable result is downloaded next to `scenes.json` as `01.jpg`,
+`02.mp4`, … and written back into the scene with a `credit` block (provider,
+ID, author, page link). Re-running skips scenes that have their file;
+`--force` fetches again and picks a different result.
+
+- [Pexels](https://www.pexels.com/api/) is used when `PEXELS_API_KEY` is
+  set, [Pixabay](https://pixabay.com/api/docs/) with `PIXABAY_API_KEY`
+  otherwise. Both licenses allow commercial use without attribution.
+- Only portrait results are kept. Pixabay has no orientation filter for
+  videos, so each file's width and height are checked.
+- Results whose tags, description or page link name a brand or a logo
+  (WhatsApp, iPhone, Samsung, …) are skipped when another result is
+  available. That catches the tagged ones only: check the picks for logos.
+- No asset is used twice in a video, and a video scene prefers clips at least
+  as long as its `duration`.
+- Search results are cached for 24 hours in `~/.cache/wkvideo/stock`
+  (`--cache-dir`), as Pixabay requires. Images are downloaded, never
+  hotlinked.
+
+## Voiceover
+
+```bash
+wkvideo voice my-video           # script.txt -> voiceover.mp3 + durations.json
+wkvideo my-video --durations my-video/durations.json
+```
+
+`wkvideo voice` reads `script.txt`, one line per scene (`#` lines are
+comments), and generates each line with
+[ElevenLabs](https://elevenlabs.io/docs/api-reference/text-to-speech/convert)
+(voice Jessica by default, `--voice`, `--model`). It prints the number of
+characters it will send before sending anything, saves the clips in
+`voice/`, joins them into `voiceover.mp3` and writes `durations.json` with
+each line's text, start and duration. Clips are reused while their line,
+voice and model don't change, so fixing one line only spends that line's
+characters (`--force` regenerates all).
+
+## Post captions
+
+```bash
+wkvideo post my-video            # checks post.json, writes post.md
+```
+
+`post.json` holds `youtube_title`, `youtube_description`, `youtube_tags`,
+`tiktok_caption`, `instagram_caption`, `facebook_caption`, `bluesky_post`
+and `x_post`. Every field is checked before `post.md` is written:
+
+| Field | Limit |
+| --- | --- |
+| YouTube title | 100 characters, no `<` or `>` |
+| YouTube description | 5,000 bytes, no `<` or `>` |
+| YouTube tags | 500 characters (tags with spaces count their quotes), 15 tags |
+| TikTok caption | 2,200 characters, 5 hashtags |
+| Instagram caption | 2,200 characters, 5 hashtags, 20 mentions |
+| Facebook caption | 63,206 characters |
+| Bluesky | 300 graphemes |
+| X | 280, weighted as X counts (links 23, emoji 2) |
+
+## API keys
+
+`wkvideo assets` and `wkvideo voice` read `PEXELS_API_KEY`,
+`PIXABAY_API_KEY` and `ELEVENLABS_API_KEY` from the environment, or from the
+nearest `.env` file (in the video folder, the current folder or one of their
+parents; `--env-file` to pick one). Keys are never printed, logged, cached or
+written to the video folder, and `.env` files are git-ignored.
 
 ## Development
 
