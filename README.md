@@ -78,6 +78,7 @@ python -m wkvideo my-video       # same thing, without installing the script
 | `--captions on\|off` | Word-by-word captions. Default: `on` |
 | `--whisper-model` | faster-whisper model used for captions. Default: `small` |
 | `--music PATH` | Background music mixed under the voice. Optional |
+| `--polish on\|off` | Compression, de-ess and -14 LUFS loudness. Default: `on` |
 | `--fps` | Frame rate. Default: 30 |
 | `--keep-temp DIR` | Keep the intermediate PNG frames and per-scene clips in `DIR` |
 
@@ -173,6 +174,19 @@ run past that point, they are left as they are and the end plays silently.
 `--music track.mp3` mixes a music track under the voiceover. The music is
 turned down by 22 dB, looped if it's shorter than the video, cut to the video's
 length and faded out over the last second. The voice level is not changed.
+
+### Audio polish
+
+By default the audio gets a light finish before it is muxed (`--polish off`
+leaves it as it is):
+
+- The voice is compressed gently (2.5:1 above -21 dB, 15 ms attack, 200 ms
+  release), then a light de-esser softens harsh "s" sounds. Music, if any, is
+  mixed in after this.
+- The final mix is normalized to -14 LUFS integrated, true peak -1 dBTP, the
+  usual level for TikTok, Reels and Shorts. ffmpeg's `loudnorm` runs twice:
+  a first pass measures the mix, the second applies one fixed gain, so the
+  voice isn't pumped up and down.
 
 ## Video ideas
 

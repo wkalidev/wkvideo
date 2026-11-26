@@ -57,7 +57,8 @@ def test_music_end_to_end(project, font, tmp_path):
     lavfi_mp3(music, "sine=frequency=220:duration=0.7")  # shorter than the video: must loop
     out = tmp_path / "out.mp4"
 
-    assert main([str(project), "-o", str(out), "--font", str(font), "--captions", "off", "--music", str(music)]) == 0
+    assert main([str(project), "-o", str(out), "--font", str(font), "--captions", "off", "--music", str(music),
+                 "--polish", "off"]) == 0
 
     # 0.5 + 0.4 s of scenes, extended to 2.5 + 0.6 = 3.1 s.
     probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=duration",

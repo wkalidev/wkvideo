@@ -67,8 +67,13 @@ def build_video(
     whisper_model: str = DEFAULT_MODEL,
     words: Optional[List[Word]] = None,
     music: Optional[Path] = None,
+    polish: bool = True,
 ) -> Path:
-    """Render the video. ``words`` skips transcription (used by tests)."""
+    """Render the video. ``words`` skips transcription (used by tests).
+
+    ``polish`` compresses and de-esses the voice and normalizes the final mix
+    to -14 LUFS (true peak -1 dB), measured in a first pass.
+    """
     if music is not None and not Path(music).is_file():
         raise FileNotFoundError(f"music file not found: {music}")
     missing = [i for i, s in enumerate(scenes, start=1) if not s.duration]
@@ -157,9 +162,18 @@ def build_video(
             track = write_caption_track(words, font, work / "captions", video_seconds)
             starts = [sum(frames[:k]) / fps for k in range(1, len(frames))]
             overlay_y = ffmpeg.overlay_y_expr(caption_tops, starts, fps)
+        loudness = None
+        if polish:
+            loudness = ffmpeg.measure_loudness(Path(audio), exe, music, video_seconds)
+            if loudness is None:
+                log("Audio polish: compression and de-ess (audio is silent, loudness left as is)")
+            else:
+                log(f"Audio polish: compression, de-ess, {loudness['input_i']} LUFS -> "
+                    f"{ffmpeg.LOUDNESS_LUFS:g} LUFS, true peak {ffmpeg.TRUE_PEAK_DB:g} dB")
         log(f"Muxing audio {Path(audio).name}" + (f" with music {Path(music).name}" if music else ""))
         ffmpeg.run(ffmpeg.final_command(
             silent, Path(audio), output, track, overlay_y, fps, exe, music=music, duration=video_seconds,
+            polish=polish, loudness=loudness,
         ))
     finally:
         if not keep:
