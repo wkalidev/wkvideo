@@ -272,9 +272,17 @@ default, `--voice`, `--model`). It prints the number of characters before
 sending anything. The audio is saved as `voiceover.mp3`, and ElevenLabs'
 character timestamps give each line's start and duration in
 `durations.json`: a cut falls halfway through the pause between two lines.
-The narration is reused while the script, voice and model don't change
-(`--force` generates it again). Changing any line generates the whole
+The narration is reused while the script, voice, model and settings don't
+change (`--force` generates it again). Changing any line generates the whole
 script again.
+
+| Setting | Default | Flag |
+| --- | --- | --- |
+| Model | `eleven_multilingual_v2` | `--model` |
+| Stability | 0.45 | `--stability` (0 to 1, lower is more expressive) |
+| Similarity boost | 0.8 | `--similarity-boost` (0 to 1) |
+| Style | 0.15 | `--style` (0 to 1) |
+| Speaker boost | on | `--speaker-boost` / `--no-speaker-boost` |
 
 ## Post captions
 

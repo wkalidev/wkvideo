@@ -7,7 +7,9 @@ audio goes to ``FOLDER/voiceover.mp3``; the character alignment gives each
 line's start and duration, written to ``FOLDER/durations.json`` (the
 ``{"lines": [...]}`` shape that ``--durations`` reads).
 
-The narration is reused while the script, voice and model stay the same
+Voice settings (stability, similarity boost, style, speaker boost) default to
+:data:`DEFAULT_SETTINGS` and can be changed per run. The narration is reused
+while the script, voice, model and settings stay the same
 (``voice/narration.json`` records what was generated). The key comes from
 ``ELEVENLABS_API_KEY`` and is never printed, logged or written.
 """
@@ -37,6 +39,12 @@ OUTPUT_FORMAT = "mp3_44100_128"
 KEY_NAME = "ELEVENLABS_API_KEY"
 MAX_CHARACTERS = 10_000      # per request for eleven_multilingual_v2
 LINE_SEPARATOR = " "         # lines are read as one paragraph, not as separate takes
+DEFAULT_SETTINGS = {
+    "stability": 0.45,           # a little variation, so it doesn't sound flat
+    "similarity_boost": 0.8,     # stay close to the voice
+    "style": 0.15,               # light style exaggeration
+    "use_speaker_boost": True,
+}
 
 
 class VoiceError(RuntimeError):
@@ -93,8 +101,23 @@ def line_spans(lines: Sequence[str]) -> List[Tuple[int, int]]:
     return spans
 
 
-def request_id(text: str, voice: str, model: str) -> str:
-    return hashlib.sha256(json.dumps([text, voice, model]).encode("utf-8")).hexdigest()[:16]
+def voice_settings(stability: Optional[float] = None, similarity_boost: Optional[float] = None,
+                   style: Optional[float] = None, use_speaker_boost: Optional[bool] = None) -> dict:
+    """:data:`DEFAULT_SETTINGS` with the given values replaced. Numbers must be 0 to 1."""
+    given = {"stability": stability, "similarity_boost": similarity_boost, "style": style,
+             "use_speaker_boost": use_speaker_boost}
+    settings = {**DEFAULT_SETTINGS, **{k: v for k, v in given.items() if v is not None}}
+    for k in ("stability", "similarity_boost", "style"):
+        if not 0.0 <= float(settings[k]) <= 1.0:
+            raise VoiceError(f"{k} must be between 0 and 1 (got {settings[k]})")
+        settings[k] = float(settings[k])
+    settings["use_speaker_boost"] = bool(settings["use_speaker_boost"])
+    return settings
+
+
+def request_id(text: str, voice: str, model: str, settings: Optional[dict] = None) -> str:
+    data = [text, voice, model, settings or DEFAULT_SETTINGS]
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
 
 def _char_times(text: str, alignment: dict) -> Tuple[List[Optional[float]], List[Optional[float]]]:
@@ -163,12 +186,13 @@ def durations_json(lines: Sequence[str], timings: Sequence[Tuple[float, float]])
                       for text, (s, d) in zip(lines, timings)]}
 
 
-def generate(text: str, key: str, voice: str, model: str, post: Post = http_post) -> Tuple[bytes, dict, int]:
+def generate(text: str, key: str, voice: str, model: str, post: Post = http_post,
+             settings: Optional[dict] = None) -> Tuple[bytes, dict, int]:
     """One with-timestamps request. Returns (MP3 bytes, alignment, characters reported)."""
     if not key:
         raise VoiceError(f"{KEY_NAME} is not set (environment or .env)")
     body, headers = post(API.format(voice=voice, fmt=OUTPUT_FORMAT), {"xi-api-key": key},
-                         {"text": text, "model_id": model})
+                         {"text": text, "model_id": model, "voice_settings": settings or dict(DEFAULT_SETTINGS)})
     try:
         data = json.loads(body)
         audio = base64.b64decode(data["audio_base64"])
@@ -213,13 +237,15 @@ def make_voiceover(
     post: Post = http_post,
     log: Callable[[str], None] = print,
     probe: Optional[Callable[[Path], float]] = None,
+    settings: Optional[dict] = None,
 ) -> VoiceResult:
     folder = Path(folder)
     lines = read_script(script or folder / "script.txt")
     text = script_text(lines)
     voice_dir = folder / "voice"
     audio_path, meta_path = voice_dir / "narration.mp3", voice_dir / "narration.json"
-    rid = request_id(text, voice, model)
+    settings = voice_settings(**(settings or {}))
+    rid = request_id(text, voice, model, settings)
     meta = _read_json(meta_path)
     fresh = not force and audio_path.is_file() and meta.get("id") == rid and meta.get("alignment")
 
@@ -232,14 +258,16 @@ def make_voiceover(
         if len(text) > MAX_CHARACTERS:
             raise VoiceError(f"script is {len(text)} characters; one request takes at most {MAX_CHARACTERS}")
         log(f"ElevenLabs: {len(text)} characters to generate in 1 request ({len(lines)} lines)")
+        log(f"  {model}, stability {settings['stability']}, similarity boost {settings['similarity_boost']}, "
+            f"style {settings['style']}, speaker boost {'on' if settings['use_speaker_boost'] else 'off'}")
         audio, alignment, reported = generate(text, key if key is not None else get_key(KEY_NAME),
-                                              voice, model, post)
+                                              voice, model, post, settings)
         sent = len(text)
         voice_dir.mkdir(parents=True, exist_ok=True)
         tmp = audio_path.with_suffix(".part")
         tmp.write_bytes(audio)
         tmp.replace(audio_path)
-        meta_path.write_text(json.dumps({"id": rid, "voice": voice, "model": model, "text": text,
+        meta_path.write_text(json.dumps({"id": rid, "voice": voice, "model": model, "settings": settings, "text": text,
                                          "alignment": alignment}) + "\n", encoding="utf-8")
 
     out = folder / "voiceover.mp3"
@@ -264,6 +292,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--script", type=Path, help="script file, one line per scene (default: FOLDER/script.txt)")
     p.add_argument("--voice", default=DEFAULT_VOICE, help=f"ElevenLabs voice ID (default: {DEFAULT_VOICE}, Jessica)")
     p.add_argument("--model", default=DEFAULT_MODEL, help=f"ElevenLabs model (default: {DEFAULT_MODEL})")
+    d = DEFAULT_SETTINGS
+    p.add_argument("--stability", type=float, help=f"0 to 1, lower is more expressive (default: {d['stability']})")
+    p.add_argument("--similarity-boost", type=float,
+                   help=f"0 to 1, how closely to match the voice (default: {d['similarity_boost']})")
+    p.add_argument("--style", type=float, help=f"0 to 1, style exaggeration (default: {d['style']})")
+    p.add_argument("--speaker-boost", action=argparse.BooleanOptionalAction, default=None,
+                   help="speaker boost (default: on)")
     p.add_argument("--force", action="store_true", help="generate again even if the script is unchanged")
     p.add_argument("--env-file", type=Path, help=f"file with {KEY_NAME} (default: the nearest .env)")
     return p
@@ -276,7 +311,9 @@ def main(argv: Optional[List[str]] = None, post: Post = http_post) -> int:
         return 2
     load_env([args.folder], args.env_file)
     try:
-        r = make_voiceover(args.folder, args.script, args.voice, args.model, args.force, post=post)
+        settings = voice_settings(args.stability, args.similarity_boost, args.style, args.speaker_boost)
+        r = make_voiceover(args.folder, args.script, args.voice, args.model, args.force, post=post,
+                           settings=settings)
     except (VoiceError, ffmpeg.FFmpegError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

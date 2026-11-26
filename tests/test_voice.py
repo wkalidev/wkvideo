@@ -273,3 +273,43 @@ def test_end_to_end_with_a_real_mp3(tmp_path):
     lines = read_line_durations(result.durations)
     assert sum(lines) == pytest.approx(probe_duration(result.voiceover), abs=0.01)
     assert probe_duration(result.voiceover) == pytest.approx(audio_length(), abs=0.1)
+
+
+def test_default_voice_settings_are_sent(tmp_path):
+    fake = FakeElevenLabs()
+    run_voice(folder_with_script(tmp_path), fake)
+    assert fake.calls[0][2]["voice_settings"] == {
+        "stability": 0.45, "similarity_boost": 0.8, "style": 0.15, "use_speaker_boost": True,
+    }
+
+
+def test_voice_settings_are_configurable_and_change_the_cache_key(tmp_path):
+    folder = folder_with_script(tmp_path)
+    run_voice(folder, FakeElevenLabs())
+    fake = FakeElevenLabs()
+    run_voice(folder, fake, settings={"stability": 0.3, "use_speaker_boost": False})
+    assert fake.calls[0][2]["voice_settings"] == {
+        "stability": 0.3, "similarity_boost": 0.8, "style": 0.15, "use_speaker_boost": False,
+    }
+    again = FakeElevenLabs()
+    run_voice(folder, again, settings={"stability": 0.3, "use_speaker_boost": False})
+    assert again.calls == []
+
+
+def test_voice_settings_out_of_range_are_refused():
+    with pytest.raises(VoiceError, match="style must be between 0 and 1"):
+        voice.voice_settings(style=1.5)
+
+
+def test_cli_voice_settings_flags(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(voice.ffmpeg, "ffprobe_binary", lambda: "ffprobe")
+    monkeypatch.setattr(voice.ffmpeg, "probe_duration", lambda f, exe="ffprobe": audio_length())
+    monkeypatch.setenv("ELEVENLABS_API_KEY", KEY)
+    fake = FakeElevenLabs()
+    folder = folder_with_script(tmp_path)
+    assert voice.main([str(folder), "--stability", "0.6", "--similarity-boost", "0.7", "--style", "0",
+                       "--no-speaker-boost"], post=fake) == 0
+    assert fake.calls[0][2]["voice_settings"] == {
+        "stability": 0.6, "similarity_boost": 0.7, "style": 0.0, "use_speaker_boost": False,
+    }
+    assert "speaker boost off" in capsys.readouterr().out
