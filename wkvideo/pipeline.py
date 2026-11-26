@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Sequence
 from . import ffmpeg
 from .captions import caption_center, caption_y, max_image_bottom, write_caption_track
 from .hook import FAST_ZOOM_AMOUNT, write_pop_frames
-from .render import HEIGHT, image_bottom, render_frame, render_logo_layer
+from .render import HEIGHT, IMAGE_TOP, image_bottom, image_size, render_frame, render_logo_layer, render_overlay
 from .scenes import Scene
 from .transcribe import DEFAULT_MODEL, Word, load_or_transcribe
 
@@ -95,9 +95,30 @@ def build_video(
         clips: List[Path] = []
         caption_tops: List[int] = []
         for i, scene in enumerate(scenes, start=1):
-            log(f"[{i}/{len(scenes)}] {scene.image.name} ({scene.duration:.2f}s)")
+            log(f"[{i}/{len(scenes)}] {scene.media.name} ({scene.duration:.2f}s)")
             frame_png = work / f"scene_{i:03d}.png"
             clip = work / f"scene_{i:03d}.mp4"
+            if scene.video is not None:
+                # Video scenes aren't zoomed: the footage moves on its own.
+                limit = max_image_bottom(font) if captions else None
+                fg = image_size(ffmpeg.probe_video_size(scene.video, ffmpeg.ffprobe_binary()), limit)
+                if captions:
+                    caption_tops.append(caption_y(caption_center(IMAGE_TOP + fg[1], font)))
+                hook = i == 1
+                render_overlay(
+                    scene.top_text, scene.accent_text, font, draw_top=not hook, draw_logo=not hook,
+                ).save(frame_png)
+                pop = logo = None
+                if hook:
+                    pop = write_pop_frames(scene.top_text, scene.accent_text, font, work / "pop", fps)
+                    logo = work / "logo.png"
+                    render_logo_layer(font).save(logo)
+                ffmpeg.run(ffmpeg.video_scene_command(
+                    scene.video, frame_png, fg, IMAGE_TOP, scene.duration, clip, fps, exe,
+                    pop_pattern=pop, logo_png=logo,
+                ))
+                clips.append(clip)
+                continue
             # With captions, keep the image high enough (even fully zoomed in)
             # for the captions to fit below it, and place them under it.
             limit = None

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 OUT_SIZE = (1080, 1920)
 UPSCALE_SIZE = (2160, 3840)
@@ -134,6 +135,87 @@ def scene_command(frame_png: Path, duration: float, out: Path, fps: int = DEFAUL
         exe, "-y", "-hide_banner", "-loglevel", "error",
         "-i", str(frame_png),
         "-vf", zoompan_filter(frames, fps),
+        "-frames:v", str(frames),
+        "-r", str(fps),
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        str(out),
+    ]
+
+
+BACKGROUND_BLUR_SIGMA = 10  # on a quarter-size copy, about the image scenes' blur
+BACKGROUND_BRIGHTNESS = 0.45
+
+
+def probe_video_size(path: Path, exe: str = "ffprobe") -> Tuple[int, int]:
+    """Displayed width and height of a video's first stream (rotation applied)."""
+    proc = subprocess.run(
+        [exe, "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=width,height:stream_side_data=rotation:stream_tags=rotate", "-of", "json", str(path)],
+        capture_output=True, text=True,
+    )
+    try:
+        stream = json.loads(proc.stdout)["streams"][0]
+        w, h = int(stream["width"]), int(stream["height"])
+    except (ValueError, KeyError, IndexError):
+        raise FFmpegError(f"could not read the size of {path}: {proc.stderr.strip()}") from None
+    rotation = stream.get("tags", {}).get("rotate")
+    for side in stream.get("side_data_list", []):
+        rotation = side.get("rotation", rotation)
+    if rotation is not None and abs(int(float(rotation))) % 180 == 90:
+        w, h = h, w
+    return w, h
+
+
+def video_scene_command(
+    video: Path,
+    overlay_png: Path,
+    fg_size: Tuple[int, int],
+    fg_top: int,
+    duration: float,
+    out: Path,
+    fps: int = DEFAULT_FPS,
+    exe: str = "ffmpeg",
+    pop_pattern: Optional[str] = None,
+    logo_png: Optional[Path] = None,
+) -> List[str]:
+    """A video scene laid out like an image scene, without the zoom.
+
+    Background: the video cover-cropped, blurred and darkened. Foreground:
+    the video at ``fg_size``, top edge at ``fg_top``. The text overlay goes on
+    top. The video loops if it is shorter than the scene. With
+    ``pop_pattern`` (the hook scene), the headline pops in and the logo is
+    layered last. The video's own audio is dropped.
+    """
+    frames = frame_count(duration, fps)
+    ow, oh = OUT_SIZE
+    fw, fh = fg_size
+    graph = (
+        f"[0:v]fps={fps},setsar=1,split[a][b];"
+        f"[a]scale={ow // 4}:{oh // 4}:force_original_aspect_ratio=increase,crop={ow // 4}:{oh // 4},"
+        f"gblur=sigma={BACKGROUND_BLUR_SIGMA},scale={ow}:{oh}:flags=bicubic,format=rgb24,"
+        f"colorchannelmixer=rr={BACKGROUND_BRIGHTNESS}:gg={BACKGROUND_BRIGHTNESS}:bb={BACKGROUND_BRIGHTNESS}[bg];"
+        f"[b]scale={fw}:{fh}:flags=lanczos[fg];"
+        f"[bg][fg]overlay=(W-w)/2:{fg_top}[c];"
+        f"[c][1:v]overlay=0:0:format=auto"
+    )
+    inputs = [
+        "-stream_loop", "-1", "-i", str(video),
+        "-loop", "1", "-framerate", str(fps), "-i", str(overlay_png),
+    ]
+    if pop_pattern is not None:
+        if logo_png is None:
+            raise ValueError("logo_png is required with pop_pattern")
+        inputs += ["-framerate", str(fps), "-i", pop_pattern, "-i", str(logo_png)]
+        graph += (
+            "[t];[t][2:v]overlay=0:0:eof_action=repeat:format=auto[p];"
+            "[p][3:v]overlay=0:0:eof_action=repeat:format=auto"
+        )
+    graph += ",format=yuv420p[v]"
+    return [
+        exe, "-y", "-hide_banner", "-loglevel", "error",
+        *inputs,
+        "-filter_complex", graph, "-map", "[v]", "-an",
         "-frames:v", str(frames),
         "-r", str(fps),
         "-c:v", "libx264", "-preset", "medium", "-crf", "18",

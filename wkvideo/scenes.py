@@ -12,12 +12,21 @@ class SceneError(ValueError):
     """Raised when scenes.json is missing or malformed."""
 
 
+VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".webm")
+
+
 @dataclass
 class Scene:
-    image: Path
+    image: Optional[Path]
     duration: Optional[float]
     top_text: str = ""
     accent_text: str = ""
+    video: Optional[Path] = None
+
+    @property
+    def media(self) -> Path:
+        """The scene's video if it has one, otherwise its image."""
+        return self.video if self.video is not None else self.image
 
 
 def _pick(entry: dict, *keys: str, default=None):
@@ -31,7 +40,9 @@ def parse_scenes(data: Union[list, dict], base_dir: Path) -> List[Scene]:
     """Turn decoded scenes.json data into Scene objects.
 
     Accepts either a list of scene objects or ``{"scenes": [...]}``.
-    Each scene needs ``image``; ``duration`` (seconds), ``top`` / ``top_text``
+    Each scene needs ``image`` or ``video`` (a file next to scenes.json;
+    ``wkvideo assets`` fills them from ``image_query`` / ``video_query``);
+    ``duration`` (seconds), ``top`` / ``top_text``
     and ``accent`` / ``accent_text`` are optional. ``duration`` may be omitted
     when durations are supplied separately (see :mod:`wkvideo.durations`).
     """
@@ -45,13 +56,26 @@ def parse_scenes(data: Union[list, dict], base_dir: Path) -> List[Scene]:
         if not isinstance(entry, dict):
             raise SceneError(f"scene {i}: expected an object, got {type(entry).__name__}")
         image = _pick(entry, "image")
-        if not image or not isinstance(image, str):
-            raise SceneError(f"scene {i}: missing 'image'")
-        image_path = Path(image)
-        if not image_path.is_absolute():
-            image_path = base_dir / image_path
-        if not image_path.is_file():
-            raise SceneError(f"scene {i}: image not found: {image_path}")
+        video = _pick(entry, "video")
+        if not image and not video:
+            hint = ""
+            if entry.get("image_query") or entry.get("video_query"):
+                hint = " (run 'wkvideo assets' to fetch it from image_query / video_query)"
+            raise SceneError(f"scene {i}: missing 'image' or 'video'{hint}")
+        media = {}
+        for key, value in (("image", image), ("video", video)):
+            if not value:
+                continue
+            if not isinstance(value, str):
+                raise SceneError(f"scene {i}: '{key}' must be a file name")
+            path = Path(value)
+            if not path.is_absolute():
+                path = base_dir / path
+            if not path.is_file():
+                raise SceneError(f"scene {i}: {key} not found: {path}")
+            media[key] = path
+        if "video" in media and media["video"].suffix.lower() not in VIDEO_SUFFIXES:
+            raise SceneError(f"scene {i}: video must be one of {', '.join(VIDEO_SUFFIXES)}")
 
         duration = _pick(entry, "duration")
         if duration is not None:
@@ -64,10 +88,11 @@ def parse_scenes(data: Union[list, dict], base_dir: Path) -> List[Scene]:
 
         scenes.append(
             Scene(
-                image=image_path,
+                image=None if "video" in media else media["image"],
                 duration=duration,
                 top_text=str(_pick(entry, "top", "top_text", default="")),
                 accent_text=str(_pick(entry, "accent", "accent_text", default="")),
+                video=media.get("video"),
             )
         )
     return scenes

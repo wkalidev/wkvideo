@@ -306,3 +306,14 @@ def render_logo_layer(font_path) -> Image.Image:
     layer = Image.new("RGBA", (WIDTH, IMAGE_TOP), (0, 0, 0, 0))
     _draw_logo(ImageDraw.Draw(layer), str(font_path))
     return layer
+
+
+def render_overlay(top_text: str, accent_text: str, font_path, draw_top: bool = True,
+                   draw_logo: bool = True) -> Image.Image:
+    """The headline, accent line and logo on a transparent full frame (for video scenes)."""
+    layer = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    if draw_logo:
+        _draw_logo(draw, str(font_path))
+    _draw_text_block(draw, top_text, accent_text, str(font_path), top=draw_top, accent=True)
+    return layer
