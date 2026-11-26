@@ -121,7 +121,7 @@ def test_samples_top_ideas(sample_ideas):
     ("13 Malicious NuGet Packages Target .NET Developers With Fake Job Assessments", "companies or IT teams"),
     ("CISA warns of critical flaw in industrial refrigeration controllers", "not about"),
     ("Ransomware gang claims attack on regional hospital network", "not about"),
-    ("SampleSwap V3 hack: Incorrect Share Accounting", "no 'what to do'"),
+    ("SampleSwap V3 hack: Incorrect Share Accounting", "protocol-level crypto hack"),
 ])
 def test_samples_skipped(sample_ideas, title, reason):
     idea = by_title(sample_ideas)[title]
@@ -174,3 +174,120 @@ def test_duplicate_stories_are_merged(sample_ideas):
     assert [a.source for a in chrome.also] == ["The Hacker News"]
     assert "Google Patches Actively Exploited Chrome Zero-Day" not in by_title(sample_ideas)
     assert not same_story(item("Chrome update fixes zero-day"), item("Fake toll payment texts spread"))
+
+
+# --- regressions from a run against the live feeds -------------------------
+
+def test_headlines_and_cut_off_sentences_are_not_advice():
+    assert find_action(["The Important Questions You Should be Asking Your Pentesters"]) is None
+    assert find_action(["Users should update their routers and..."]) is None
+    assert find_action(["Fusionist advised users to suspend ACE transfers while investigating"]) is None
+    assert find_action(["Users should update their routers."]) == "Users should update their routers."
+
+
+def test_roundups_are_skipped():
+    idea = score_item(item("Weekly Recap: Chrome 0-Day, Fake Apps and More", "Users should update Chrome."), NOW)
+    assert idea.skip == "a roundup of several stories"
+
+
+@pytest.mark.parametrize("title, summary", [
+    ("VMware vCenter Hit by Critical Auth Bypass Flaw After Zero-Day Exploitation",
+     "Broadcom shipped patches. Users are advised to update to the latest version."),
+    ("Hackers Exploit Critical ASP.NET Anti-CSRF Library Flaw Allowing Unauthenticated RCE",
+     "Researchers have urged users to stop using the library after a flaw was exploited in the wild."),
+    ("WHMCS SQL Injection Could Expose Customer Data and Admin Password Hashes",
+     "A flaw could let anyone retrieve customer records. Users should update."),
+])
+def test_server_and_library_flaws_are_it_only(title, summary):
+    assert score_item(item(title, summary), NOW).skip == "aimed at companies or IT teams, not everyday users"
+
+
+def test_consumer_update_is_kept():
+    idea = score_item(item("WhatsApp Patches 3 Security Flaws in Android App", "Users should update the app."), NOW)
+    assert idea.skip is None and idea.hook == "Using WhatsApp? Update it today"
+
+
+def test_unpatched_flaw_never_says_update():
+    idea = score_item(item("New Unpatched Windows 0-Day Lets Someone Run Programs on a Locked PC",
+                           "Users should not leave their PC unattended."), NOW)
+    assert idea.hook == "Using Windows? This flaw has no fix yet"
+    assert "update" not in idea.hook.lower()
+
+
+def test_generic_security_words_dont_merge_different_stories():
+    a = item("Hackers Exploit Critical ASP.NET Anti-CSRF Library Flaw Allowing Unauthenticated RCE")
+    b = item("Hackers now exploit critical Drupal RCE flaw to hijack sites")
+    assert not same_story(a, b)
+    one = item("1Password Hacked, Customer Data and Source Code Stolen in GitHub Account Breach")
+    two = item("1Password customer data stolen after employee GitHub account breach")
+    assert same_story(one, two)
+
+
+def test_same_product_and_topic_merge_only_when_close_in_time():
+    a, b = item("Chrome emergency update fixes zero-day"), item("Google patches actively exploited Chrome zero-day")
+    topic = classify(a)[0]
+    assert same_story(a, b, topic, topic)
+    old = item("Google patches actively exploited Chrome zero-day", age_days=6)
+    assert not same_story(a, old, topic, topic)
+
+
+def test_user_facing_defillama_hack_is_kept():
+    hack = item("SomeWallet hack: Phishing", content="Attackers phished users. Users should revoke approvals.",
+                extra={"target": "DeFi Protocol", "technique": "Phishing", "classification": "Social Engineering"})
+    assert score_item(hack, NOW).skip is None
+
+
+def test_unpatched_hooks_are_short_and_not_first_person():
+    from wkvideo.ideas.score import UNPATCHED_HOOK, UNPATCHED_PRODUCT_HOOK
+
+    for hook in (UNPATCHED_HOOK, UNPATCHED_PRODUCT_HOOK.format(product=max(PRODUCTS, key=len))):
+        assert len(hook) < 70 and not FIRST_PERSON.search(hook)
+
+
+def test_advising_form_counts_as_advice():
+    s = "WhatsApp is advising users to keep their apps and devices up to date to ensure optimal protection."
+    assert find_action([s]) == s
+
+
+def test_threatsday_bulletin_is_a_roundup():
+    title = "ThreatsDay: GPT Jailbreak Flaws, PNG Malware, $500M Ransom Demands + 17 More Stories"
+    assert score_item(item(title, "Users should keep an eye out."), NOW).skip == "a roundup of several stories"
+
+
+def test_product_names_are_case_sensitive_whole_words():
+    from wkvideo.ideas.score import find_products
+
+    assert find_products("stop exposing the devices on the internet edge") == []
+    assert find_products("a signal to zoom in") == []
+    assert find_products("Update Microsoft Edge and Chrome") == ["Microsoft Edge", "Chrome"]
+
+
+def test_firewall_end_of_life_is_it_only():
+    idea = score_item(item("SonicWall Warns Gen 6 Firewalls Won't Get Security Patches, Even for Critical Flaws",
+                           "SonicWall urged customers to stop exposing the devices on the internet edge."), NOW)
+    assert idea.skip == "aimed at companies or IT teams, not everyday users"
+
+
+def test_feed_truncation_marker_is_dropped_from_why():
+    idea = score_item(item("1Password customer data stolen after GitHub account breach",
+                           "1Password has disclosed a data breach affecting some customer data. [...]",
+                           "Customers should be wary of emails asking them to reset passwords."), NOW)
+    assert idea.why == "1Password has disclosed a data breach affecting some customer data."
+
+
+@pytest.mark.parametrize("title, topic", [
+    ("ROMULUS ClickFix Attacks Deliver RAT That Can Spy on Users and Control PCs", "paste-a-command trick"),
+    ("New extortion gang launches large-scale vishing campaign", "phone scam"),
+    ("Hackers Exploited GL.iNet Cloud Flaw to Install Malware on Routers", "router"),
+])
+def test_more_consumer_topics(title, topic):
+    assert classify(item(title))[0].name == topic
+
+
+def test_attacker_steps_are_not_advice():
+    steps = ("Use fake Zillow apartment-review pages that serve a fake verification prompt to install "
+             "NetSupport RAT on visitors' Windows computers.")
+    assert find_action([steps]) is None
+    warn = "Never paste a command from a website into the Run box, even if a fake CAPTCHA asks for it."
+    assert find_action([steps, warn]) == warn
+    assert find_action(["Don't install apps from links in texts, even if they look like your bank's app."])

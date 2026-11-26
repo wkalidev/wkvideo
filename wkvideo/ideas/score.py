@@ -47,6 +47,10 @@ TOPICS: Tuple[Topic, ...] = (
     Topic("tech support scam", SCAM, r"tech support scam|fake (virus|security) (alert|warning|pop-?up)",
           "A pop-up says call support? Don't pick up the phone"),
     Topic("qr scam", SCAM, r"\bqr code|quishing", "Think twice before scanning that QR code"),
+    Topic("paste-a-command trick", SCAM, r"clickfix|filefix|fake captcha|paste (a |this |the )?command",
+          "A site asks you to paste a command? Close the tab"),
+    Topic("phone scam", SCAM, r"vishing|voice phishing|callback phishing|scam calls?",
+          "That call from 'support' could be the attack"),
     Topic("wallet drainer", CRYPTO,
           r"drainer|fake airdrop|sign(ing|ed)? (a |the )?(malicious )?transaction|token approvals?|approval phishing",
           "Signing that wallet pop-up could empty it"),
@@ -62,9 +66,12 @@ TOPICS: Tuple[Topic, ...] = (
           "That app might not be what it says it is",
           "That {product} app might not be what it says it is"),
     Topic("urgent update", ACCOUNT,
-          r"zero-day|0-day|emergency (security )?update|actively exploited|exploited in (the wild|attacks)",
+          r"zero-day|0-day|emergency (security )?update|actively exploited|exploited in (the wild|attacks)"
+          r"|patch(es|ed)?\b.{0,30}\b(flaws?|vulnerabilit\w+|bugs?)|security (update|patch|fix)",
           "Hit update today. Here's why it can't wait",
           "Using {product}? Update it today"),
+    Topic("router", ACCOUNT, r"\b(home |wi-?fi |travel )?routers?\b",
+          "Your router needs updates too. Here's why"),
     Topic("data breach", ACCOUNT, r"data breach|customer data|data (was |were )?(stolen|leaked|exposed)|leaked (data|database)",
           "Your data could be in this new leak",
           "Use {product}? Read this about their breach"),
@@ -83,9 +90,10 @@ TOPICS: Tuple[Topic, ...] = (
     Topic("scam", SCAM, r"\bscam|fraud", "A new scam is making the rounds. Spot it fast", generic=True),
 )
 
-# Products ordinary viewers use, matched case-insensitively on word boundaries.
+# Products ordinary viewers use. Matched case-sensitively as whole words, so
+# "signal" or "zoom in" don't count; Edge needs its full name ("internet edge").
 PRODUCTS = (
-    "Chrome", "Firefox", "Safari", "Edge", "iPhone", "iOS", "Android", "Windows", "macOS", "WhatsApp",
+    "Chrome", "Firefox", "Safari", "Microsoft Edge", "iPhone", "iOS", "Android", "Windows", "macOS", "WhatsApp",
     "Telegram", "Signal", "Gmail", "Outlook", "Instagram", "Facebook", "TikTok", "YouTube", "PayPal",
     "1Password", "LastPass", "Bitwarden", "MetaMask", "Coinbase", "Binance", "Steam", "Discord", "Zoom",
     "Netflix", "Amazon", "Gemini", "ChatGPT", "Copilot",
@@ -102,10 +110,22 @@ CONSUMER = re.compile(
 ENTERPRISE = re.compile(
     r"\b(pan-os|firewalls?|vpn (appliance|gateway)s?|servers?|enterprise|critical infrastructure|industrial|"
     r"ics|scada|controllers?|organi[sz]ations|government agenc(y|ies)|ransomware gang|nuget|npm|pypi|"
-    r"developers?|devops|kubernetes|geoserver|cve-\d{4}-\d+|data centers?|hospital network|agencies)\b", re.I)
+    r"developers?|devops|kubernetes|geoserver|cve-\d{4}-\d+|data centers?|hospital network|agencies|"
+    r"vmware|vcenter|esxi?|drupal|joomla|wordpress plugins?|asp\.net|\.net|librar(y|ies)|sql injection|"
+    r"rce|remote code execution|root access|admin(istrator)? (password|account)s?|hosting compan(y|ies)|"
+    r"load balancers?|appliances?|citrix|fortinet|fortigate|ivanti|cisco|sap|oracle|jenkins|gitlab|"
+    r"confluence|jira|exchange server|sharepoint|nginx|apache|unauthenticated|privilege escalation|"
+    r"open-source|source code|backend|ci/cd|containers?|cloud (instances|tenants)|active directory)\b", re.I)
 BUSINESS = re.compile(
     r"\b(acquires?|acquisition|merger|funding round|raises \$|series [a-e]\b|earnings|revenue|ipo|"
     r"stock price|shares (rose|fell)|appoints?|new ceo|partnership with|valuation|quarterly)\b", re.I)
+ROUNDUP = re.compile(r"weekly recap|week in review|roundup|newsletter|this week in|\brecap\b|digest|"
+                     r"\bmore stories\b|threatsday|\bbulletin\b", re.I)
+UNPATCHED = re.compile(r"\bunpatched|no (patch|fix) (is )?(yet )?available|not (yet )?(been )?(patched|fixed)", re.I)
+# DefiLlama hacks that carry a lesson for people holding crypto, not only for protocol teams.
+USER_FACING_HACK = re.compile(
+    r"phishing|drainer|approval|address poisoning|front-?end|dns|social engineering|fake|impersonat|"
+    r"seed|wallet|sim swap|malware|extension", re.I)
 
 # --- regions ---------------------------------------------------------------
 
@@ -139,8 +159,9 @@ VIEWER = r"(users?|customers?|consumers?|people|owners?|holders?|recipients?|sho
 USER_ADVICE = [
     re.compile(rf"\b{VIEWER}\b[^.;]{{0,80}}\b(should|must|need to|are (advised|urged|encouraged|recommended|asked|told)|"
                rf"is (advised|recommended)|can protect)\b", re.I),
-    re.compile(rf"\b(recommends?|recommended|advises?|advised|urges?|urged|encourages?|encouraged|warns?)\b[^.;]{{0,40}}\b{VIEWER}\b"
-               r"[^.;]{0,20}\bto\b", re.I),
+    re.compile(rf"\b(recommend(s|ed|ing)?|advis(es|ed|ing)|urg(es|ed|ing)|encourag(es|ed|ing)|warn(s|ed|ing)?|"
+               rf"remind(s|ed|ing)?|tell(s|ing)?|told)\b[^.;]{{0,40}}\b{VIEWER}\b[^.;]{{0,20}}\bto\b", re.I),
+    re.compile(rf"\b(advised|recommended|important|best) that {VIEWER}\b", re.I),
 ]
 IMPERATIVE = re.compile(
     r"^(?:(?:so|and|also|instead|to stay safe|to protect yourself|to be safe|if in doubt|for now|"
@@ -149,6 +170,14 @@ IMPERATIVE = re.compile(
     r"verify|report|delete|remove|uninstall|use|contact|hang up|ignore|block|revoke|review|keep|make sure|"
     r"look for|watch out|only|set up|call back|go directly|visit|log in|sign out|stop|pause|treat|open|"
     r"move|don['’]t click|do not click|freeze|lock)\b", re.I)
+# An imperative that mentions the attack itself is usually the article describing
+# what attackers do ("Use fake pages that serve a RAT..."), unless it warns against it.
+ATTACK_WORDS = re.compile(
+    r"\b(fake|malicious|malware|rat|payloads?|backdoors?|exploits?|lures?|victims?|attackers?|threat actors?|"
+    r"phishing (pages?|kits?|sites?)|trojan|stealer|loader|c2)\b", re.I)
+WARNING_START = re.compile(
+    r"^(?:\S+[,:]?\s+){0,4}?(never|don['’]t|do not|avoid|ignore|block|remove|uninstall|delete|report|"
+    r"be (wary|careful|cautious|suspicious)|watch out|stop|revoke|beware)\b", re.I)
 NOT_FOR_VIEWERS = re.compile(
     r"\b(administrators?|admins|organi[sz]ations?|companies|it teams?|defenders|developers?|security teams?|"
     r"vendors?|network operators?|enterprises?|agencies)\b", re.I)
@@ -168,11 +197,24 @@ def sentences(text: str) -> List[str]:
     return out
 
 
+TRUNCATION = re.compile(r"\s*\[(\.\.\.|…)\]\s*$")   # a feed's "[...]" cut-off marker
+
+
 def first_sentence(text: str, limit: int = 300) -> str:
     for s in sentences(text):
+        s = TRUNCATION.sub("", s)
         if len(s.split()) >= 5:
             return s if len(s) <= limit else s[: limit - 1].rsplit(" ", 1)[0] + "…"
     return ""
+
+
+def is_sentence(s: str) -> bool:
+    """A complete prose sentence: ends with . ! or ? (not cut off with "..."), not a Title Case headline."""
+    if not re.search(r"[.!?][\"'”’)]?$", s) or re.search(r"(\.\.\.|…)[\"'”’)]?$", s):
+        return False
+    words = [w for w in re.findall(r"[A-Za-z][\w'’-]*", s) if len(w) > 3]
+    capitalised = sum(w[0].isupper() for w in words)
+    return not words or capitalised / len(words) < 0.6
 
 
 def find_action(texts: Iterable[str]) -> Optional[str]:
@@ -180,11 +222,13 @@ def find_action(texts: Iterable[str]) -> Optional[str]:
     best: Optional[Tuple[int, str]] = None
     for text in texts:
         for s in sentences(text):
-            if len(s) > MAX_SENTENCE or len(s.split()) < 4:
+            if len(s) > MAX_SENTENCE or len(s.split()) < 4 or not is_sentence(s):
                 continue
             if any(p.search(s) for p in USER_ADVICE):
                 rank = 0
             elif IMPERATIVE.search(s):
+                if ATTACK_WORDS.search(s) and not WARNING_START.search(s):
+                    continue
                 rank = 1
             else:
                 continue
@@ -210,7 +254,13 @@ def hedges_in(*texts: str) -> List[str]:
 
 
 def find_products(text: str) -> List[str]:
-    return [p for p in PRODUCTS if re.search(rf"(?<![\w-]){re.escape(p)}(?![\w-])", text, re.I)]
+    """Known products named in the text, in the order they appear."""
+    found = []
+    for p in PRODUCTS:
+        m = re.search(rf"(?<![\w-]){re.escape(p)}(?![\w-])", text)
+        if m:
+            found.append((m.start(), p))
+    return [p for _, p in sorted(found)]
 
 
 def regions_in(text: str) -> Dict[str, str]:
@@ -263,8 +313,17 @@ def classify(item: Item) -> Tuple[Optional[Topic], List[str]]:
     return (matched[0] if matched else None), cats
 
 
+UNPATCHED_HOOK = "A flaw with no fix yet. Here's how to stay safe"
+UNPATCHED_PRODUCT_HOOK = "Using {product}? This flaw has no fix yet"
+
+
 def make_hook(topic: Topic, item: Item) -> str:
     products = find_products(item.title)
+    if topic.name == "urgent update" and UNPATCHED.search(item.title + " " + item.summary):
+        # Don't tell viewers to update when there's nothing to update to.
+        if products:
+            return UNPATCHED_PRODUCT_HOOK.format(product=products[0])
+        return UNPATCHED_HOOK
     if topic.product_hook and products:
         hook = topic.product_hook.format(product=products[0])
         if len(hook) < PRODUCT_HOOK_MAX:
@@ -290,6 +349,9 @@ def region_for(item: Item, article: Sequence[str] = ()) -> Tuple[str, Dict[str, 
 def score_item(item: Item, now: datetime, article: Sequence[str] = ()) -> Idea:
     idea = Idea(item)
     title, text = item.title, item.text
+    if ROUNDUP.search(title):
+        idea.skip = "a roundup of several stories"
+        return idea
     topic, cats = classify(item)
     consumer_topic = topic is not None
     if BUSINESS.search(title) and not (topic and topic.category in (SCAM, ACCOUNT, CRYPTO)):
@@ -300,12 +362,20 @@ def score_item(item: Item, now: datetime, article: Sequence[str] = ()) -> Idea:
         return idea
     idea.topic, idea.categories = topic, cats
 
-    enterprise = len(set(m.group(0).lower() for m in ENTERPRISE.finditer(title)))
-    enterprise += len(set(m.group(0).lower() for m in ENTERPRISE.finditer(item.summary))) // 2
+    lead = f"{title} {item.summary}"
+    enterprise = len(set(m.group(0).lower() for m in ENTERPRISE.finditer(lead)))
     products = find_products(text)
+    lead_products = find_products(lead)
     consumer = bool(CONSUMER.search(text)) or bool(products)
-    if enterprise >= 2 and not find_products(title):
+    it_only = enterprise >= 2 and not find_products(title)
+    if topic.name in ("urgent update", "data breach") and enterprise >= 1 and not lead_products:
+        it_only = True   # a server or library flaw: nothing for viewers to update
+    if it_only:
         idea.skip = "aimed at companies or IT teams, not everyday users"
+        return idea
+    if item.extra and item.extra.get("target") not in ("Wallet", "CEX") and not USER_FACING_HACK.search(
+            f"{item.extra.get('classification', '')} {item.extra.get('technique', '')}"):
+        idea.skip = "a protocol-level crypto hack with no lesson for everyday users"
         return idea
 
     texts = [item.summary, item.content, *article]
@@ -324,12 +394,10 @@ def score_item(item: Item, now: datetime, article: Sequence[str] = ()) -> Idea:
     points += 12 if products else 0
     points += 6 if consumer else 0
     points += region_points
-    points -= 10 * min(enterprise, 2)
+    points -= 8 * min(enterprise, 2)
     points -= 4 if idea.uncertain else 0
     age_days = max(0.0, (now - item.published).total_seconds() / 86400)
     points += round(6 * max(0.0, 1 - age_days / 7))
-    if topic.category == CRYPTO and item.extra.get("target") not in ("", None, "Wallet", "CEX"):
-        points -= 6   # protocol-level bug: harder to turn into advice for normal users
     if idea.action:
         points += 20
     idea.score = max(0, min(100, points))
@@ -340,20 +408,35 @@ def score_item(item: Item, now: datetime, article: Sequence[str] = ()) -> Idea:
 
 # --- duplicates ------------------------------------------------------------
 
-STOP = set("the and for with from that this into over after new are has have its their how why what you your "
-           "was were will can more than about says said warns".split())
+# Words every security headline shares: they say nothing about which story it is.
+STOP = set(
+    "the and for with from that this into over after new are has have its their how why what you your was were "
+    "will can more than about says said warns now hackers hacker hacked hack hacks exploit exploits exploited "
+    "exploiting critical flaw flaws vulnerability vulnerabilities bug bugs attack attacks attackers security "
+    "patch patches patched patching update updates fix fixes fixed zero day actively users data stolen "
+    "malware threat actors researchers warn found discovered".split())
+STORY_DAYS = 4
 
 
 def _tokens(title: str) -> set:
     return {t for t in re.findall(r"[a-z0-9]+", title.lower()) if len(t) >= 3 and t not in STOP}
 
 
-def same_story(a: Item, b: Item) -> bool:
-    ta, tb = _tokens(a.title), _tokens(b.title)
-    if not ta or not tb:
+def same_story(a: Item, b: Item, topic_a: Optional[Topic] = None, topic_b: Optional[Topic] = None) -> bool:
+    """Two headlines about the same event.
+
+    Either they share at least 3 distinctive words (and half the shorter
+    title's), or they name the same product, have the same topic and were
+    published within a few days of each other.
+    """
+    if abs((a.published - b.published).total_seconds()) > STORY_DAYS * 86400:
         return False
+    ta, tb = _tokens(a.title), _tokens(b.title)
     shared = ta & tb
-    return len(shared) >= 3 and len(shared) / min(len(ta), len(tb)) >= 0.5
+    if ta and tb and len(shared) >= 3 and len(shared) / min(len(ta), len(tb)) >= 0.5:
+        return True
+    same_product = set(find_products(a.title)) & set(find_products(b.title))
+    return bool(same_product and topic_a and topic_b and topic_a.name == topic_b.name)
 
 
 def merge_duplicates(ideas: List[Idea]) -> List[Idea]:
@@ -361,7 +444,7 @@ def merge_duplicates(ideas: List[Idea]) -> List[Idea]:
     ordered = sorted(ideas, key=lambda i: (i.skip is not None, -i.score, -i.item.published.timestamp()))
     kept: List[Idea] = []
     for idea in ordered:
-        twin = next((k for k in kept if same_story(k.item, idea.item)), None)
+        twin = next((k for k in kept if same_story(k.item, idea.item, k.topic, idea.topic)), None)
         if twin is None:
             kept.append(idea)
         else:

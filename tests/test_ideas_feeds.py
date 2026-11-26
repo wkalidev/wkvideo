@@ -116,3 +116,18 @@ def test_recent_keeps_last_seven_days():
     assert "Old Protocol hack: Flashloan Governance Attack" not in titles
     assert "Fraud and scams advisory: November 2026" in titles                   # Nov 19, 6.9 days old
     assert dropped == 3
+
+
+def test_article_paragraphs_use_only_the_article_body():
+    filler = "This sentence is here to make the article body long enough to count as the story text. " * 3
+    page = (
+        "<html><body><div class='post-body'><span>By Someone, Nov 20</span>"
+        f"<div id='articlebody' class='articlebody clear'><p>{filler}</p>"
+        "<p>Users should only install apps from the official store and check the developer name.</p></div>"
+        "<div class='related'><p>The Important Questions You Should be Asking Your Pentesters today</p></div>"
+        "</div><aside><p>Subscribe to our newsletter for weekly security news and tips from us.</p></aside>"
+        "</body></html>"
+    )
+    paras = article_paragraphs(page)
+    assert paras[-1] == "Users should only install apps from the official store and check the developer name."
+    assert not any("Pentesters" in p or "newsletter" in p for p in paras)

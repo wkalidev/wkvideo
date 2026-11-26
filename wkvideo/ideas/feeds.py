@@ -112,37 +112,74 @@ def http_get(url: str) -> bytes:
 
 # --- text helpers ----------------------------------------------------------
 
-class _TextExtractor(HTMLParser):
-    SKIP = {"script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "form", "figure"}
-    BLOCK = {"p", "li", "h1", "h2", "h3", "h4", "br", "div", "blockquote", "tr"}
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+# Containers that hold an article's own text on common news and blog sites,
+# most specific first ("post-body" often wraps the byline and tags too).
+BODY_MARKS = {
+    "body": re.compile(r"articlebody|article-body|article__body|entry-content|story-body", re.I),
+    "post": re.compile(r"post-body", re.I),
+}
 
-    def __init__(self):
+
+def _is_body(attrs, mark) -> bool:
+    a = dict(attrs)
+    if mark is BODY_MARKS["body"] and (a.get("itemprop") or "").lower() == "articlebody":
+        return True
+    return any(mark.search(a.get(k) or "") for k in ("class", "id"))
+
+
+class _TextExtractor(HTMLParser):
+    """Collects text, skipping scripts and page furniture.
+
+    With ``scope`` set ("body", "post" or "article"), only text inside the
+    first matching element is kept: an article body container, or <article>.
+    """
+
+    SKIP = {"script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "form", "figure", "template"}
+    BLOCK = {"p", "li", "h1", "h2", "h3", "h4", "br", "div", "blockquote", "tr", "section", "article"}
+
+    def __init__(self, scope: Optional[str] = None):
         super().__init__(convert_charrefs=True)
         self.parts: List[str] = []
         self.skip = 0
+        self.scope = scope
+        self.depth = 0 if scope else 1     # > 0 while inside the scope element
+        self.done = False
+
+    def _starts_scope(self, tag, attrs) -> bool:
+        if self.scope in BODY_MARKS:
+            return _is_body(attrs, BODY_MARKS[self.scope])
+        return tag == "article"
 
     def handle_starttag(self, tag, attrs):
+        if self.scope and not self.done:
+            if self.depth == 0 and self._starts_scope(tag, attrs) and tag not in VOID:
+                self.depth = 1
+                return
+            if self.depth and tag not in VOID:
+                self.depth += 1
         if tag in self.SKIP:
             self.skip += 1
         elif tag in self.BLOCK:
             self.parts.append("\n")
 
     def handle_endtag(self, tag):
+        if self.scope and self.depth and tag not in VOID:
+            self.depth -= 1
+            if self.depth == 0:
+                self.done = True          # only the first matching element
         if tag in self.SKIP and self.skip:
             self.skip -= 1
         elif tag in self.BLOCK:
             self.parts.append("\n")
 
     def handle_data(self, data):
-        if not self.skip:
+        if not self.skip and self.depth and not (self.scope and self.done):
             self.parts.append(data)
 
 
-def html_to_text(markup: str) -> str:
-    """Plain text from an HTML fragment or page; paragraphs become separate lines."""
-    if not markup:
-        return ""
-    parser = _TextExtractor()
+def _extract(markup: str, scope: Optional[str] = None) -> str:
+    parser = _TextExtractor(scope)
     parser.feed(markup)
     parser.close()
     text = html.unescape("".join(parser.parts)).replace("\xa0", " ")
@@ -150,9 +187,24 @@ def html_to_text(markup: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def html_to_text(markup: str) -> str:
+    """Plain text from an HTML fragment or page; paragraphs become separate lines."""
+    return _extract(markup) if markup else ""
+
+
 def article_paragraphs(page: str, min_words: int = 8) -> List[str]:
-    """The prose paragraphs of an article page (short lines like menus are dropped)."""
-    return [p for p in html_to_text(page).split("\n") if len(p.split()) >= min_words]
+    """The prose paragraphs of an article page.
+
+    Only the article's own text is used when the page marks it (an article
+    body container, else <article>), so sidebars and "related" links are not
+    mistaken for the story. Short lines like menus are dropped.
+    """
+    text = ""
+    for scope in ("body", "post", "article", None):
+        text = _extract(page, scope)
+        if len(text.split()) >= 40:
+            break
+    return [p for p in text.split("\n") if len(p.split()) >= min_words]
 
 
 # --- dates -----------------------------------------------------------------
