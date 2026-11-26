@@ -265,14 +265,16 @@ wkvideo my-video --durations my-video/durations.json
 ```
 
 `wkvideo voice` reads `script.txt`, one line per scene (`#` lines are
-comments), and generates each line with
-[ElevenLabs](https://elevenlabs.io/docs/api-reference/text-to-speech/convert)
-(voice Jessica by default, `--voice`, `--model`). It prints the number of
-characters it will send before sending anything, saves the clips in
-`voice/`, joins them into `voiceover.mp3` and writes `durations.json` with
-each line's text, start and duration. Clips are reused while their line,
-voice and model don't change, so fixing one line only spends that line's
-characters (`--force` regenerates all).
+comments), and sends the whole script to
+[ElevenLabs](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps)
+in one request, so it is read as one continuous narration (voice Jessica by
+default, `--voice`, `--model`). It prints the number of characters before
+sending anything. The audio is saved as `voiceover.mp3`, and ElevenLabs'
+character timestamps give each line's start and duration in
+`durations.json`: a cut falls halfway through the pause between two lines.
+The narration is reused while the script, voice and model don't change
+(`--force` generates it again). Changing any line generates the whole
+script again.
 
 ## Post captions
 

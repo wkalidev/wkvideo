@@ -1,21 +1,25 @@
-"""Voiceover with ElevenLabs: one clip per script line, joined into one MP3.
+"""Voiceover with ElevenLabs: the whole script in one request, timed per line.
 
 ``wkvideo voice FOLDER`` reads ``FOLDER/script.txt`` (one line per scene),
-prints how many characters it will send, generates each missing clip into
-``FOLDER/voice/``, joins them into ``FOLDER/voiceover.mp3`` and writes
-``FOLDER/durations.json`` (the ``{"lines": [...]}`` shape that
-``--durations`` reads).
+prints how many characters it will send, and generates the whole script as
+one continuous narration with ElevenLabs' ``with-timestamps`` endpoint. The
+audio goes to ``FOLDER/voiceover.mp3``; the character alignment gives each
+line's start and duration, written to ``FOLDER/durations.json`` (the
+``{"lines": [...]}`` shape that ``--durations`` reads).
 
-Clips are reused while their line, voice and model stay the same, so editing
-one line only spends that line's characters. The key comes from
+The narration is reused while the script, voice and model stay the same
+(``voice/narration.json`` records what was generated). The key comes from
 ``ELEVENLABS_API_KEY`` and is never printed, logged or written.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import difflib
 import hashlib
 import json
+import shutil
 import sys
 import urllib.error
 import urllib.request
@@ -26,25 +30,27 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 from . import ffmpeg
 from .env import get_key, load_env
 
-API = "https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format={fmt}"
+API = "https://api.elevenlabs.io/v1/text-to-speech/{voice}/with-timestamps?output_format={fmt}"
 DEFAULT_VOICE = "cgSgspJ2msm6clMCkdW9"  # Jessica
 DEFAULT_MODEL = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"
 KEY_NAME = "ELEVENLABS_API_KEY"
+MAX_CHARACTERS = 10_000      # per request for eleven_multilingual_v2
+LINE_SEPARATOR = " "         # lines are read as one paragraph, not as separate takes
 
 
 class VoiceError(RuntimeError):
     pass
 
 
-# (url, headers, json body) -> (audio bytes, response headers)
+# (url, headers, json body) -> (response body, response headers)
 Post = Callable[[str, Dict[str, str], dict], Tuple[bytes, Dict[str, str]]]
 
 
-def http_post(url: str, headers: Dict[str, str], body: dict, timeout: float = 120.0) -> Tuple[bytes, Dict[str, str]]:
+def http_post(url: str, headers: Dict[str, str], body: dict, timeout: float = 180.0) -> Tuple[bytes, Dict[str, str]]:
     """POST JSON. Errors carry the status and ElevenLabs' message, never the headers."""
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST",
-                                 headers={**headers, "Content-Type": "application/json", "Accept": "audio/mpeg"})
+                                 headers={**headers, "Content-Type": "application/json", "Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read(), {k.lower(): v for k, v in resp.headers.items()}
@@ -73,93 +79,111 @@ def read_script(path: Path) -> List[str]:
     return lines
 
 
-def clip_id(text: str, voice: str, model: str) -> str:
+def script_text(lines: Sequence[str]) -> str:
+    """The text sent to ElevenLabs: every line, in one paragraph."""
+    return LINE_SEPARATOR.join(lines)
+
+
+def line_spans(lines: Sequence[str]) -> List[Tuple[int, int]]:
+    """``(start, end)`` character offsets of each line inside :func:`script_text`."""
+    spans, pos = [], 0
+    for line in lines:
+        spans.append((pos, pos + len(line)))
+        pos += len(line) + len(LINE_SEPARATOR)
+    return spans
+
+
+def request_id(text: str, voice: str, model: str) -> str:
     return hashlib.sha256(json.dumps([text, voice, model]).encode("utf-8")).hexdigest()[:16]
 
 
-@dataclass
-class Plan:
-    lines: List[str]
-    files: List[Path]
-    todo: List[int]          # indexes of lines to generate
+def _char_times(text: str, alignment: dict) -> Tuple[List[Optional[float]], List[Optional[float]]]:
+    """Start and end time of every character of ``text``, from ElevenLabs' alignment.
 
-    @property
-    def characters(self) -> int:
-        """Characters that will be sent (and billed)."""
-        return sum(len(self.lines[i]) for i in self.todo)
-
-    @property
-    def total_characters(self) -> int:
-        return sum(len(l) for l in self.lines)
-
-
-def plan(lines: Sequence[str], clip_dir: Path, voice: str, model: str, force: bool = False) -> Plan:
-    manifest = _read_manifest(clip_dir)
-    files, todo = [], []
-    for i, text in enumerate(lines):
-        f = Path(clip_dir) / f"{i + 1:02d}.mp3"
-        files.append(f)
-        if force or not f.is_file() or manifest.get(f.name) != clip_id(text, voice, model):
-            todo.append(i)
-    return Plan(list(lines), files, todo)
-
-
-def _read_manifest(clip_dir: Path) -> Dict[str, str]:
+    The alignment normally lists the characters of ``text`` one for one; if it
+    doesn't, characters are matched with difflib and the unmatched ones get None.
+    """
     try:
-        return json.loads((Path(clip_dir) / "clips.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+        chars = list(alignment["characters"])
+        starts = [float(t) for t in alignment["character_start_times_seconds"]]
+        ends = [float(t) for t in alignment["character_end_times_seconds"]]
+    except (KeyError, TypeError, ValueError):
+        raise VoiceError("ElevenLabs returned no character alignment") from None
+    if not chars or not (len(chars) == len(starts) == len(ends)):
+        raise VoiceError("ElevenLabs returned an incomplete character alignment")
+    if len(chars) == len(text) and "".join(chars) == text:
+        return list(starts), list(ends)
+    # An entry of ``chars`` may hold more than one code point: match on a flat index.
+    flat, owner = [], []
+    for k, c in enumerate(chars):
+        for ch in c:
+            flat.append(ch)
+            owner.append(k)
+    out_s: List[Optional[float]] = [None] * len(text)
+    out_e: List[Optional[float]] = [None] * len(text)
+    for block in difflib.SequenceMatcher(None, text, "".join(flat), autojunk=False).get_matching_blocks():
+        for d in range(block.size):
+            k = owner[block.b + d]
+            out_s[block.a + d], out_e[block.a + d] = starts[k], ends[k]
+    return out_s, out_e
 
 
-def _write_manifest(clip_dir: Path, manifest: Dict[str, str]) -> None:
-    (Path(clip_dir) / "clips.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
+def line_timings(lines: Sequence[str], alignment: dict, total: float) -> List[Tuple[float, float]]:
+    """``(start, duration)`` of every line, from the character alignment.
+
+    Each line is spoken from its first to its last non-space character. The
+    cut between two lines sits halfway through the pause between them, so a
+    scene never starts after its first word or ends before its last one. The
+    first line starts at 0 and the last one runs to ``total`` (the audio
+    length), so the durations add up to the whole voiceover.
+    """
+    text = script_text(lines)
+    starts, ends = _char_times(text, alignment)
+    spoken = []
+    for i, (a, b) in enumerate(line_spans(lines)):
+        s = [starts[k] for k in range(a, b) if starts[k] is not None and not text[k].isspace()]
+        e = [ends[k] for k in range(a, b) if ends[k] is not None and not text[k].isspace()]
+        if not s or not e:
+            raise VoiceError(f"line {i + 1} is missing from ElevenLabs' alignment")
+        spoken.append((s[0], e[-1]))
+    cuts = [0.0]
+    for (_, end_prev), (start_next, _) in zip(spoken, spoken[1:]):
+        cut = (end_prev + start_next) / 2 if start_next > end_prev else start_next
+        cuts.append(max(cut, cuts[-1]))
+    cuts.append(max(total, spoken[-1][1], cuts[-1]))
+    timings = [(cuts[i], cuts[i + 1] - cuts[i]) for i in range(len(lines))]
+    for i, (_, d) in enumerate(timings):
+        if d <= 0:
+            raise VoiceError(f"line {i + 1} got no time in ElevenLabs' alignment")
+    return timings
 
 
-def generate_clips(p: Plan, key: str, voice: str, model: str, post: Post = http_post,
-                   log: Callable[[str], None] = print) -> int:
-    """Generate the planned clips. Returns the characters ElevenLabs reported (or sent)."""
+def durations_json(lines: Sequence[str], timings: Sequence[Tuple[float, float]]) -> dict:
+    return {"lines": [{"text": text, "startSeconds": round(s, 6), "durationSeconds": round(d, 6)}
+                      for text, (s, d) in zip(lines, timings)]}
+
+
+def generate(text: str, key: str, voice: str, model: str, post: Post = http_post) -> Tuple[bytes, dict, int]:
+    """One with-timestamps request. Returns (MP3 bytes, alignment, characters reported)."""
     if not key:
         raise VoiceError(f"{KEY_NAME} is not set (environment or .env)")
-    clip_dir = p.files[0].parent
-    clip_dir.mkdir(parents=True, exist_ok=True)
-    manifest = _read_manifest(clip_dir)
-    used = 0
-    url = API.format(voice=voice, fmt=OUTPUT_FORMAT)
-    for i in p.todo:
-        text = p.lines[i]
-        log(f"  line {i + 1}/{len(p.lines)}: {len(text)} chars")
-        audio, headers = post(url, {"xi-api-key": key}, {"text": text, "model_id": model})
-        if not audio:
-            raise VoiceError(f"line {i + 1}: ElevenLabs returned no audio")
-        tmp = p.files[i].with_suffix(".part")
-        tmp.write_bytes(audio)
-        tmp.replace(p.files[i])
-        manifest[p.files[i].name] = clip_id(text, voice, model)
-        _write_manifest(clip_dir, manifest)
-        try:
-            used += int(headers.get("character-cost", len(text)))
-        except ValueError:
-            used += len(text)
-    return used
-
-
-def join_command(clips: Sequence[Path], out: Path, exe: str = "ffmpeg") -> List[str]:
-    """Decode every clip and encode them back to back as one MP3."""
-    cmd = [exe, "-y", "-hide_banner", "-loglevel", "error"]
-    for c in clips:
-        cmd += ["-i", str(c)]
-    streams = "".join(f"[{i}:a]" for i in range(len(clips)))
-    cmd += ["-filter_complex", f"{streams}concat=n={len(clips)}:v=0:a=1[a]", "-map", "[a]",
-            "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100", str(out)]
-    return cmd
-
-
-def durations_json(lines: Sequence[str], durations: Sequence[float]) -> dict:
-    out, start = [], 0.0
-    for text, d in zip(lines, durations):
-        out.append({"text": text, "startSeconds": round(start, 6), "durationSeconds": round(d, 6)})
-        start += d
-    return {"lines": out}
+    body, headers = post(API.format(voice=voice, fmt=OUTPUT_FORMAT), {"xi-api-key": key},
+                         {"text": text, "model_id": model})
+    try:
+        data = json.loads(body)
+        audio = base64.b64decode(data["audio_base64"])
+    except (ValueError, KeyError, TypeError):
+        raise VoiceError("ElevenLabs returned no audio") from None
+    if not audio:
+        raise VoiceError("ElevenLabs returned no audio")
+    alignment = data.get("alignment") or data.get("normalized_alignment")
+    if not alignment:
+        raise VoiceError("ElevenLabs returned no character alignment")
+    try:
+        used = int(headers.get("character-cost", len(text)))
+    except ValueError:
+        used = len(text)
+    return audio, alignment, used
 
 
 @dataclass
@@ -172,6 +196,13 @@ class VoiceResult:
     seconds: float
 
 
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def make_voiceover(
     folder: Path,
     script: Optional[Path] = None,
@@ -182,44 +213,58 @@ def make_voiceover(
     post: Post = http_post,
     log: Callable[[str], None] = print,
     probe: Optional[Callable[[Path], float]] = None,
-    run: Optional[Callable[[Sequence[str]], None]] = None,
 ) -> VoiceResult:
     folder = Path(folder)
     lines = read_script(script or folder / "script.txt")
-    p = plan(lines, folder / "voice", voice, model, force)
-    log(f"ElevenLabs: {p.characters} characters to generate "
-        f"({len(p.todo)} of {len(lines)} lines; script total {p.total_characters} characters)")
-    reported = 0
-    if p.todo:
-        reported = generate_clips(p, key if key is not None else get_key(KEY_NAME), voice, model, post, log)
+    text = script_text(lines)
+    voice_dir = folder / "voice"
+    audio_path, meta_path = voice_dir / "narration.mp3", voice_dir / "narration.json"
+    rid = request_id(text, voice, model)
+    meta = _read_json(meta_path)
+    fresh = not force and audio_path.is_file() and meta.get("id") == rid and meta.get("alignment")
+
+    sent = reported = 0
+    if fresh:
+        log(f"ElevenLabs: 0 characters to generate (script unchanged, {len(text)} characters); "
+            "nothing sent to ElevenLabs")
+        alignment = meta["alignment"]
     else:
-        log("All clips are up to date; nothing sent to ElevenLabs")
+        if len(text) > MAX_CHARACTERS:
+            raise VoiceError(f"script is {len(text)} characters; one request takes at most {MAX_CHARACTERS}")
+        log(f"ElevenLabs: {len(text)} characters to generate in 1 request ({len(lines)} lines)")
+        audio, alignment, reported = generate(text, key if key is not None else get_key(KEY_NAME),
+                                              voice, model, post)
+        sent = len(text)
+        voice_dir.mkdir(parents=True, exist_ok=True)
+        tmp = audio_path.with_suffix(".part")
+        tmp.write_bytes(audio)
+        tmp.replace(audio_path)
+        meta_path.write_text(json.dumps({"id": rid, "voice": voice, "model": model, "text": text,
+                                         "alignment": alignment}) + "\n", encoding="utf-8")
+
+    out = folder / "voiceover.mp3"
+    shutil.copyfile(audio_path, out)
     if probe is None:
         exe = ffmpeg.ffprobe_binary()
         probe = lambda f: ffmpeg.probe_duration(f, exe)  # noqa: E731
-    durations = [probe(f) for f in p.files]
-    out = folder / "voiceover.mp3"
-    if run is None:
-        run, exe = ffmpeg.run, ffmpeg.ffmpeg_binary()
-    else:
-        exe = "ffmpeg"
-    run(join_command(p.files, out, exe))
+    total = probe(out)
+    timings = line_timings(lines, alignment, total)
     dur_path = folder / "durations.json"
-    dur_path.write_text(json.dumps(durations_json(lines, durations), indent=1) + "\n", encoding="utf-8")
-    return VoiceResult(out, dur_path, p.characters, reported, len(lines), sum(durations))
+    dur_path.write_text(json.dumps(durations_json(lines, timings), indent=1) + "\n", encoding="utf-8")
+    return VoiceResult(out, dur_path, sent, reported, len(lines), total)
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="wkvideo voice",
-        description="Generate the voiceover with ElevenLabs: one clip per line of script.txt, "
-                    "joined into voiceover.mp3, plus durations.json.",
+        description="Generate the voiceover with ElevenLabs: script.txt read as one narration "
+                    "into voiceover.mp3, plus durations.json with each line's timing.",
     )
     p.add_argument("folder", type=Path, help="video folder")
     p.add_argument("--script", type=Path, help="script file, one line per scene (default: FOLDER/script.txt)")
     p.add_argument("--voice", default=DEFAULT_VOICE, help=f"ElevenLabs voice ID (default: {DEFAULT_VOICE}, Jessica)")
     p.add_argument("--model", default=DEFAULT_MODEL, help=f"ElevenLabs model (default: {DEFAULT_MODEL})")
-    p.add_argument("--force", action="store_true", help="regenerate every clip")
+    p.add_argument("--force", action="store_true", help="generate again even if the script is unchanged")
     p.add_argument("--env-file", type=Path, help=f"file with {KEY_NAME} (default: the nearest .env)")
     return p
 
