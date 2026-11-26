@@ -7,3 +7,5 @@ dist/
 .venv/
 *.mp4
 .wkvideo_tmp/
+.env
+.env.*
