@@ -291,3 +291,91 @@ def test_attacker_steps_are_not_advice():
     warn = "Never paste a command from a website into the Run box, even if a fake CAPTCHA asks for it."
     assert find_action([steps, warn]) == warn
     assert find_action(["Don't install apps from links in texts, even if they look like your bank's app."])
+
+
+# --- full-post feeds (Malwarebytes format) ---------------------------------
+
+@pytest.fixture(scope="module")
+def malwarebytes():
+    from wkvideo.ideas.feeds import Source, parse_rss
+    from ideas_samples import DATA
+
+    src = Source("Malwarebytes Labs", "rss", "https://www.malwarebytes.com/blog/feed/index.xml")
+    return {i.title: i for i in parse_rss((DATA / "malwarebytes.xml").read_bytes(), src)}
+
+
+def test_promo_trailer_and_inline_css_are_not_post_text(malwarebytes):
+    post = malwarebytes["A bot tested a leaked cloud key within seconds of exposure"]
+    assert "downloading Malwarebytes" not in post.content
+    assert "Try it now" not in post.content and "{" not in post.content
+    assert "Set spending limits and alerts." in post.content
+
+
+def test_advice_comes_from_the_stay_safe_section(malwarebytes):
+    post = malwarebytes["A bot tested a leaked cloud key within seconds of exposure"]
+    assert find_action([post.summary, post.content]) == "Keep secrets out of what you share."
+    assert region_for(post)[0] == "Worldwide (the source names no country or region)"
+
+
+def test_topic_comes_from_the_opening_not_a_passing_mention():
+    opening = "A bot found a leaked cloud key within seconds. " * 20          # well past the opening
+    post = item("A bot tested a leaked cloud key within seconds of exposure",
+                content=opening + "One test machine sat behind a home router.")
+    topic, _ = classify(post)
+    assert topic is None or topic.name != "router"
+
+
+def test_statistics_and_promos_are_not_advice():
+    assert find_action(["Only around 6% went on to sustained use of account resources."]) is None
+    assert find_action(["Keep threats off your devices by downloading Malwarebytes today."]) is None
+    assert find_action(["Only install apps from the official store."]) == "Only install apps from the official store."
+
+
+def test_week_in_security_is_a_roundup(malwarebytes):
+    idea = score_item(malwarebytes["A week in security (November 16 – November 22)"], NOW)
+    assert idea.skip == "a roundup of several stories"
+
+
+def test_ai_routers_are_not_network_routers():
+    ai = item("Researchers planted secrets in AI prompts", content=(
+        "Some services take your prompts and send them on to AI providers. These services, known as routers, "
+        "give you access to different models."))
+    assert classify(ai)[0] is None or classify(ai)[0].name != "router"
+    for title in ("Hackers Exploited GL.iNet Cloud Flaw to Install Malware on Routers",
+                  "Botnet hijacks home routers to send spam"):
+        assert classify(item(title))[0].name == "router"
+
+
+def test_ai_risk_stories_are_not_ai_tools():
+    muse = item("Muse AI got nosy and started making things up, Meta insiders say",
+                "Meta's AI agent Muse surfaced information from other apps and helps itself to data.")
+    topic, _ = classify(muse)
+    assert topic is None or topic.category != "AI tool"
+    body_only = item("Company reorganises its security team", content="The AI feature helps users.")
+    assert classify(body_only)[0] is None or classify(body_only)[0].category != "AI tool"
+
+
+def test_menu_steps_with_capitalised_names_are_advice():
+    step = "Open About Google Chrome from Chrome’s Settings or Help menu."
+    assert find_action([step]) == step
+
+
+def test_negated_need_and_page_promos_are_not_advice():
+    assert find_action(["To avoid a fake giveaway, you don’t need to decide whether every frame is AI-generated."]) is None
+    assert find_action(["Stop threats before they can do any harm."]) is None
+    assert find_action(["Browser Guard blocks phishing pages and malicious sites automatically."]) is None
+
+
+def test_catch_all_scam_hook_claims_nothing():
+    topic, _ = classify(item("US launches center to disrupt scams and warn victims sooner"))
+    assert topic.name == "scam"
+    assert "new" not in topic.hook.lower()
+
+
+@pytest.mark.parametrize("title, topic", [
+    ("Deepfake Elon Musk nearly costs viewers $4.7 million in crypto", "deepfake"),
+    ("Scammers use AI-generated voices to impersonate a relative in trouble", "voice clone"),
+    ("Hackers leak data linked to Visa, Mastercard, and JPMorgan customers", "data breach"),
+])
+def test_deepfake_voice_clone_and_leak_topics(title, topic):
+    assert classify(item(title))[0].name == topic

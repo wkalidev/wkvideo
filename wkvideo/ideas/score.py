@@ -34,8 +34,11 @@ class Topic:
 
 # Ordered from most to least specific: the first match picks the hook.
 TOPICS: Tuple[Topic, ...] = (
-    Topic("voice clone", SCAM, r"deepfake|voice clon|cloned voice|ai-generated voice|fake video call",
+    Topic("voice clone", SCAM, r"voice clon|cloned voices?|ai-generated voices?|fake (video )?calls? from (a )?"
+          r"(relative|family|son|daughter|grandchild)|impersonat\w* (a )?(relative|family member)",
           "That panicked call from family might not be real"),
+    Topic("deepfake", SCAM, r"deepfake|ai-generated (video|celebrity)|fake (celebrity|livestream|giveaway)",
+          "That celebrity video might be a deepfake"),
     Topic("text scam", SCAM,
           r"smishing|(toll|delivery|package|parcel|postal|redelivery)\b.{0,60}\b(texts?|sms|messages?)\b"
           r"|\b(texts?|sms)\b.{0,60}\b(toll|delivery|package|parcel)",
@@ -70,15 +73,20 @@ TOPICS: Tuple[Topic, ...] = (
           r"|patch(es|ed)?\b.{0,30}\b(flaws?|vulnerabilit\w+|bugs?)|security (update|patch|fix)",
           "Hit update today. Here's why it can't wait",
           "Using {product}? Update it today"),
-    Topic("router", ACCOUNT, r"\b(home |wi-?fi |travel )?routers?\b",
+    # Network routers only: "AI routers" (services like OpenRouter) are something else.
+    Topic("router", ACCOUNT,
+          r"\b(home|wi-?fi|wireless|travel|soho|consumer|broadband|internet|mesh)\s+routers?\b"
+          r"|\brouters?\s+(firmware|botnet|malware|password)"
+          r"|\b(malware|botnet|backdoors?|hack\w*|compromis\w*|hijack\w*|infect\w*)\s+(on|of|into)\s+(\w+\s+)?routers?\b",
           "Your router needs updates too. Here's why"),
-    Topic("data breach", ACCOUNT, r"data breach|customer data|data (was |were )?(stolen|leaked|exposed)|leaked (data|database)",
+    Topic("data breach", ACCOUNT, r"data breach|customer data|data (was |were )?(stolen|leaked|exposed)|leaked (data|database)"
+          r"|leak(s|ed)? (the )?(data|records|details)|exposed (databases?|records)",
           "Your data could be in this new leak",
           "Use {product}? Read this about their breach"),
     Topic("account takeover", ACCOUNT,
           r"account takeover|hijacked accounts?|sim swap|two-factor|\b2fa\b|\bmfa\b|passkeys?|password (manager|reuse|leak)|infostealer|session cookies",
-          "One setting that keeps your accounts yours",
-          "Your {product} account needs this one setting"),
+          "Keep your accounts yours. Here's how",
+          "Use {product}? Keep your account yours"),
     Topic("crypto hack", CRYPTO,
           r"(crypto|defi|wallet|exchange|bridge|protocol|token|blockchain)\b.{0,80}\b(hack|exploit|drain|stolen|theft)"
           r"|(hack|exploit|drain|stolen|theft)\w*\b.{0,80}\b(crypto|defi|wallet|exchange|bridge|token)",
@@ -87,7 +95,8 @@ TOPICS: Tuple[Topic, ...] = (
           r"\b(ai|gemini|chatgpt|copilot|claude|llm)\b.{0,80}\b(feature|tool|app|helps?|detects?|protects?|flag)",
           "A new AI feature worth turning on",
           "A new {product} feature worth turning on"),
-    Topic("scam", SCAM, r"\bscam|fraud", "A new scam is making the rounds. Spot it fast", generic=True),
+    # Catch-all: the hook must not claim anything (e.g. that the scam is new).
+    Topic("scam", SCAM, r"\bscam|fraud", "Scam warning: 30 seconds that could save you money", generic=True),
 )
 
 # Products ordinary viewers use. Matched case-sensitively as whole words, so
@@ -119,7 +128,7 @@ ENTERPRISE = re.compile(
 BUSINESS = re.compile(
     r"\b(acquires?|acquisition|merger|funding round|raises \$|series [a-e]\b|earnings|revenue|ipo|"
     r"stock price|shares (rose|fell)|appoints?|new ceo|partnership with|valuation|quarterly)\b", re.I)
-ROUNDUP = re.compile(r"weekly recap|week in review|roundup|newsletter|this week in|\brecap\b|digest|"
+ROUNDUP = re.compile(r"weekly recap|week in review|\ba week in\b|roundup|newsletter|this week in|\brecap\b|digest|"
                      r"\bmore stories\b|threatsday|\bbulletin\b", re.I)
 UNPATCHED = re.compile(r"\bunpatched|no (patch|fix) (is )?(yet )?available|not (yet )?(been )?(patched|fixed)", re.I)
 # DefiLlama hacks that carry a lesson for people holding crypto, not only for protocol teams.
@@ -168,7 +177,8 @@ IMPERATIVE = re.compile(
     r"to turn it on)[,:]?\s+)?"
     r"(update|install|enable|turn (on|off)|change|reset|check|avoid|never|don['’]t|do not|be (wary|careful|cautious|suspicious)|"
     r"verify|report|delete|remove|uninstall|use|contact|hang up|ignore|block|revoke|review|keep|make sure|"
-    r"look for|watch out|only|set up|call back|go directly|visit|log in|sign out|stop|pause|treat|open|"
+    r"look for|watch out|only (install|download|use|buy|pay|click|open|trust|share|log in|sign in|enter|visit|"
+    r"connect|scan|reply|answer|give)|set up|call back|go directly|visit|log in|sign out|stop|pause|treat|open|"
     r"move|don['’]t click|do not click|freeze|lock)\b", re.I)
 # An imperative that mentions the attack itself is usually the article describing
 # what attackers do ("Use fake pages that serve a RAT..."), unless it warns against it.
@@ -212,24 +222,61 @@ def is_sentence(s: str) -> bool:
     """A complete prose sentence: ends with . ! or ? (not cut off with "..."), not a Title Case headline."""
     if not re.search(r"[.!?][\"'”’)]?$", s) or re.search(r"(\.\.\.|…)[\"'”’)]?$", s):
         return False
-    words = [w for w in re.findall(r"[A-Za-z][\w'’-]*", s) if len(w) > 3]
+    # Headlines capitalise nearly every word; advice that names menus and products
+    # ("Open About Google Chrome from the Settings or Help menu.") still has some lowercase.
+    words = [w for w in re.findall(r"[A-Za-z][\w'’-]*", s)[1:] if len(w) > 3]
     capitalised = sum(w[0].isupper() for w in words)
-    return not words or capitalised / len(words) < 0.6
+    return not words or capitalised / len(words) < 0.8
+
+
+# A section of advice in the article ("How to stay safe", "What you can do").
+SAFETY_HEADING = re.compile(
+    r"stay safe|staying safe|protect (yourself|your)|what (you|to) (can )?do|what should you do|"
+    r"how to (avoid|spot|stay|protect|keep)|tips|recommendations|safety advice|be safe", re.I)
+# The site advertising its own product ("...by downloading Malwarebytes today").
+PROMO = re.compile(
+    r"\b(download(ing)?|try|get|buy|subscribe to|sign up for)\b[^.]{0,40}\b(today|now|free|premium|trial)\b|"
+    r"\btry it\b|\bfree trial\b|\bour (product|app|software|solution)s?\b|\bstop threats\b|"
+    r"\b(blocks?|protects?|catches)\b[^.]{0,60}\b(automatically|free|one click|before it becomes)\b", re.I)
+NEGATED_NEED = re.compile(r"\b(don['’]t|do not|doesn['’]t|does not|no) need to\b|\bthere['’]s no need\b", re.I)
+
+
+def _is_heading(line: str) -> bool:
+    return len(line.split()) <= 10 and not re.search(r"[.!?:][\"'”’)]?$", line)
+
+
+def _candidate_sentences(text: str):
+    """(sentence, in_safety_section) for each sentence, tracking the article's headings."""
+    in_safety = False
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if _is_heading(line):
+            in_safety = bool(SAFETY_HEADING.search(line))
+            continue
+        for s in SENTENCE_SPLIT.split(line):
+            if s.strip():
+                yield s.strip(), in_safety
 
 
 def find_action(texts: Iterable[str]) -> Optional[str]:
-    """The source's own advice to ordinary people, quoted; None if it gives none."""
+    """The source's own advice to ordinary people, quoted; None if it gives none.
+
+    Advice in the article's own "how to stay safe" section comes first, then
+    sentences addressed to users ("users should..."), then plain imperatives.
+    """
     best: Optional[Tuple[int, str]] = None
     for text in texts:
-        for s in sentences(text):
-            if len(s) > MAX_SENTENCE or len(s.split()) < 4 or not is_sentence(s):
+        for s, in_safety in _candidate_sentences(text):
+            if len(s) > MAX_SENTENCE or len(s.split()) < 4 or not is_sentence(s) or PROMO.search(s):
                 continue
-            if any(p.search(s) for p in USER_ADVICE):
-                rank = 0
+            if any(p.search(s) for p in USER_ADVICE) and not NEGATED_NEED.search(s):
+                rank = -2 if in_safety else 0
             elif IMPERATIVE.search(s):
                 if ATTACK_WORDS.search(s) and not WARNING_START.search(s):
                     continue
-                rank = 1
+                rank = -1 if in_safety else 1
             else:
                 continue
             # Advice addressed to admins or companies isn't something viewers can do.
@@ -238,9 +285,22 @@ def find_action(texts: Iterable[str]) -> Optional[str]:
                 continue
             if best is None or rank < best[0]:
                 best = (rank, s)
-        if best and best[0] == 0:
+        if best and best[0] <= 0:
             break
     return best[1] if best else None
+
+
+TOPIC_CHARS = 700     # topics are read from the title, the summary and the post's opening
+REGION_CHARS = 1500
+
+
+def lead_text(item: Item, chars: int = TOPIC_CHARS) -> str:
+    """The title, summary and opening of the post: what the story is about.
+
+    Full posts also carry side remarks, lists of related stories and sign-offs,
+    whose words shouldn't decide the topic or the region.
+    """
+    return " ".join(t for t in (item.title, item.summary, item.content[:chars]) if t)
 
 
 def hedges_in(*texts: str) -> List[str]:
@@ -292,16 +352,25 @@ class Idea:
     also: List[Item] = field(default_factory=list)  # the same story from other sources
 
 
+AI_RISK = re.compile(
+    r"\b(attacks?|attackers?|malware|exploit\w*|hack\w*|abuse\w*|warns?|nosy|leak\w*|risk\w*|flaws?|"
+    r"vulnerab\w*|privacy|hallucinat\w*|making things up|insiders|lawsuit|sued|fined|breach\w*|deepfakes?|"
+    r"jailbreak\w*|scammers?|criminals?|stole|steal\w*)\b", re.I)
+
+
 def classify(item: Item) -> Tuple[Optional[Topic], List[str]]:
     """The item's main topic (first match in the title, else in the text) and all its categories."""
     in_title: List[Topic] = []
     in_text: List[Topic] = []
     for topic in TOPICS:
-        if topic.category == AI_TOOL and re.search(r"\b(attacks?|malware|exploit|hack|abuse|warns?)\b", item.title, re.I):
-            continue  # AI used *against* people isn't an AI tool tip
+        if topic.category == AI_TOOL:
+            # A tool to recommend: named in the headline, and not a story about AI
+            # being used against people or going wrong.
+            if AI_RISK.search(item.title) or not re.search(topic.pattern, item.title, re.I):
+                continue
         if re.search(topic.pattern, item.title, re.I):
             in_title.append(topic)
-        elif re.search(topic.pattern, item.text, re.I):
+        elif re.search(topic.pattern, lead_text(item), re.I):
             in_text.append(topic)
     # Specific topics first (title, then text), then the catch-alls.
     matched = ([t for t in in_title if not t.generic] + [t for t in in_text if not t.generic]
@@ -333,7 +402,7 @@ def make_hook(topic: Topic, item: Item) -> str:
 
 def region_for(item: Item, article: Sequence[str] = ()) -> Tuple[str, Dict[str, str], int]:
     """(label, evidence, points). Only what the source names counts."""
-    text = " ".join([item.text, *article])
+    text = " ".join([lead_text(item, REGION_CHARS), *article[:6]])
     found = regions_in(text)
     if found:
         names = ", ".join(found)

@@ -178,13 +178,31 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data)
 
 
+# Inline CSS that some page builders put in the post text (".kt-btn{color:#555}").
+CSS_LINE = re.compile(r"\{[^{}]*:[^{}]*\}|^[.#][\w-]+[^{]*\{")
+
+
 def _extract(markup: str, scope: Optional[str] = None) -> str:
     parser = _TextExtractor(scope)
     parser.feed(markup)
     parser.close()
     text = html.unescape("".join(parser.parts)).replace("\xa0", " ")
     lines = (re.sub(r"[ \t\r\f\v]+", " ", line).strip() for line in text.split("\n"))
-    return "\n".join(line for line in lines if line)
+    return "\n".join(line for line in lines if line and not CSS_LINE.search(line))
+
+
+TRAILER_MAX_CHARS = 600
+
+
+def strip_trailer(markup: str) -> str:
+    """Drop a short block after the post's last <hr>: usually a sign-off or an ad for the site's own product."""
+    cut = markup.lower().rfind("<hr")
+    if cut <= 0:
+        return markup
+    after, before = len(_extract(markup[cut:])), len(_extract(markup[:cut]))
+    if after <= TRAILER_MAX_CHARS and before > 2 * after:
+        return markup[:cut]
+    return markup
 
 
 def html_to_text(markup: str) -> str:
@@ -279,7 +297,7 @@ def parse_rss(data: bytes, source: Source) -> List[Item]:
             continue
         items.append(Item(
             source=source.name, title=title, link=link.strip(), published=published,
-            summary=html_to_text(summary), content=html_to_text(content), home=source.home,
+            summary=html_to_text(summary), content=html_to_text(strip_trailer(content)), home=source.home,
         ))
     return items
 
